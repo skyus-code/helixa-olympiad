@@ -1,0 +1,31 @@
+{
+  "name": "helixa-olympiad",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Landing page Helixa Olympiad — olimpiade online Matematika & Biologi untuk siswa SMA di Indonesia.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -b",
+    "check:responsive": "node scripts/audit.mjs",
+    "check:interaction": "node scripts/interaction-check.mjs",
+    "check:spec": "node scripts/spec-check.mjs",
+    "check": "npm run build && npm run check:spec && npm run check:responsive && npm run check:interaction"
+  },
+  "dependencies": {
+    "motion": "^12.23.12",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.13",
+    "@types/react": "^19.1.13",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^5.0.2",
+    "tailwindcss": "^4.1.13",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.5"
+  }
+}

@@ -1,0 +1,8 @@
+# Normalisasi line ending antar platform (project ini di-build di Linux CI)
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
