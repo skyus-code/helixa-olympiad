@@ -16,6 +16,11 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  # Fallback base path for the project page. `configure-pages` normally supplies
+  # this; the fallback keeps the build correct even if that step cannot run.
+  FALLBACK_BASE: /helixa-olympiad
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -29,18 +34,22 @@ jobs:
 
       - run: npm ci
 
-      # Resolves the Pages site so `base_path` is correct for a project page
-      # (served from /<repo>/). `enablement: true` turns Pages on via the
-      # built-in GITHUB_TOKEN, so no manual setting in the repo is required.
+      # Reads the Pages site to learn its real base path. A project page is
+      # served from /<repo>/, so every asset must carry that prefix.
+      #
+      # This step is allowed to fail: the built-in GITHUB_TOKEN is not allowed
+      # to create a Pages site ("Resource not accessible by integration"), so it
+      # reports Not Found until Pages has been switched on once in
+      # Settings > Pages > Source: GitHub Actions. Failing softly here keeps the
+      # build green and the artifact uploadable regardless.
       - id: pages
+        continue-on-error: true
         uses: actions/configure-pages@v6
-        with:
-          enablement: true
 
       - name: Build
         run: npm run build
         env:
-          PUBLIC_BASE: ${{ steps.pages.outputs.base_path }}
+          PUBLIC_BASE: ${{ steps.pages.outputs.base_path || env.FALLBACK_BASE }}
 
       - uses: actions/upload-pages-artifact@v4
         with:
