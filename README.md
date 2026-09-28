@@ -266,8 +266,8 @@ npm run build   # -> dist/
 
 `dist/` adalah static site murni, tanpa adapter server. Opsi:
 
-- **GitHub Pages** — otomatis lewat `.github/workflows/deploy.yml`. Tiap push ke `main`
-  build & deploy. URL: <https://skyus-code.github.io/helixa-olympiad/>
+- **GitHub Pages** — lewat `.github/workflows/deploy.yml`. Tiap push ke `main` build & deploy.
+  URL: <https://skyus-code.github.io/helixa-olympiad/>
 - **Vercel** — build `npm run build`, output `dist`
 - **Netlify** — build `npm run build`, publish `dist`
 - **Cloudflare Pages** — build `npm run build`, output directory `dist`
@@ -282,14 +282,27 @@ mengikuti base tersebut. Ini ditangani di `vite.config.ts`:
 | Konteks | `PUBLIC_BASE` | Hasil |
 |---|---|---|
 | `npm run dev` / `npm run preview` | (kosong) | `base: '/'` |
-| CI (GitHub Actions) | dari `actions/configure-pages` | `base: '/helixa-olympiad/'` |
+| CI (GitHub Actions) | `configure-pages`, jatuh ke `/helixa-olympiad` | `base: '/helixa-olympiad/'` |
 
-Workflow mengambil `base_path` otomatis lewat `actions/configure-pages`, jadi tetap benar
-walaupun repo di-rename. `index.html` otomatis ter-prefix — termasuk `favicon.svg` — sehingga
-tidak ada asset yang gagal dimuat.
-
-Kalau nanti dipindah ke domain sendiri, cukup kosongkan `PUBLIC_BASE` di workflow; `base`
+`index.html` otomatis ter-prefix — termasuk `favicon.svg` — sehingga tidak ada asset yang gagal
+dimuat. Kalau nanti dipindah ke domain sendiri, cukup kosongkan `PUBLIC_BASE` di workflow; `base`
 kembali ke `/` tanpa perlu ubah kode.
+
+### Aktivasi GitHub Pages (perlu sekali)
+
+CI tidak bisa mengaktifkan Pages sendiri. `GITHUB_TOKEN` bawaan Actions **tidak** berwenang
+membuat situs Pages baru — GitHub membalas `Resource not accessible by integration`. Satu
+langkah manual, sekali saja:
+
+1. Buka <https://github.com/skyus-code/helixa-olympiad/settings/pages>
+2. **Source** → pilih **GitHub Actions** → Save
+
+Setelah itu tiap push ke `main` deploy otomatis. Sampai langkah itu dilakukan, job `build`
+tetap hijau dan artifact tetap ter-upload — hanya job `deploy` yang gagal, jadi tidak ada
+build yang terbuang.
+
+Untuk mencoba lagi tanpa push baru: tab **Actions** → workflow *Deploy to GitHub Pages* →
+**Run workflow**.
 
 ---
 
