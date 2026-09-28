@@ -264,13 +264,32 @@ panel tertutup agar kontennya tidak terbaca screen reader.
 npm run build   # -> dist/
 ```
 
-`dist/` adalah static site murni, tanpa adapter server. Ketiganya langsung bisa:
+`dist/` adalah static site murni, tanpa adapter server. Opsi:
 
+- **GitHub Pages** — otomatis lewat `.github/workflows/deploy.yml`. Tiap push ke `main`
+  build & deploy. URL: <https://skyus-code.github.io/helixa-olympiad/>
 - **Vercel** — build `npm run build`, output `dist`
 - **Netlify** — build `npm run build`, publish `dist`
 - **Cloudflare Pages** — build `npm run build`, output directory `dist`
 
 Hanya anchor (`#tentang` dll) dan tombol eksternal, jadi tidak perlu aturan rewrite.
+
+### Base path
+
+Karena GitHub Pages menyajikan *project page* dari `/<nama-repo>/`, semua asset harus
+mengikuti base tersebut. Ini ditangani di `vite.config.ts`:
+
+| Konteks | `PUBLIC_BASE` | Hasil |
+|---|---|---|
+| `npm run dev` / `npm run preview` | (kosong) | `base: '/'` |
+| CI (GitHub Actions) | dari `actions/configure-pages` | `base: '/helixa-olympiad/'` |
+
+Workflow mengambil `base_path` otomatis lewat `actions/configure-pages`, jadi tetap benar
+walaupun repo di-rename. `index.html` otomatis ter-prefix — termasuk `favicon.svg` — sehingga
+tidak ada asset yang gagal dimuat.
+
+Kalau nanti dipindah ke domain sendiri, cukup kosongkan `PUBLIC_BASE` di workflow; `base`
+kembali ke `/` tanpa perlu ubah kode.
 
 ---
 
@@ -301,6 +320,11 @@ Catatan:
 - Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 
 **Total: 67/67 cek spec + 59/59 cek interaksi + 11/11 viewport bersih.**
+
+Tiga suite di atas dijalankan ulang terhadap **build dengan `PUBLIC_BASE=/helixa-olympiad`**
+di-serve di `http://localhost:4181/helixa-olympiad/` — konfigurasi identik dengan yang tayang
+di GitHub Pages. Semua tetap lulus, termasuk navigasi anchor dan trigger scroll-reveal
+(29/29 elemen) serta parallax di kedua titik.
 
 Yang ikut terverifikasi otomatis:
 - Navigasi keyboard: urutan tab mulai dari skip link, semua link navbar terjangkau, 12/12 elemen
