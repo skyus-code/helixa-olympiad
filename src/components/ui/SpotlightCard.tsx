@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from 'react';
 import { registerHoverTarget } from '../../hooks/useMagnetic';
-import { useIsoLayoutEffect } from '../../hooks/useGsapMedia';
+import { useIsoLayoutEffect } from '../../hooks/useIsoLayoutEffect';
 
 type SpotlightCardProps = {
   children: ReactNode;
@@ -19,7 +19,7 @@ type SpotlightCardProps = {
  * dan painter browser cukup menggambar ulang gradient.
  *
  * Di layar sentuh tidak ada pointermove, sehingga spotlight tidak pernah
- * menyala; CSS juga menyembunyikkannya lewat `opacity: 0` sampai hover.
+ * menyala; CSS juga menyembunyikannya lewat `opacity: 0` sampai hover.
  */
 export function SpotlightCard({
   children,
@@ -35,14 +35,49 @@ export function SpotlightCard({
 
     if (!window.matchMedia('(hover: hover) and (pointer: fine)').matches) return;
 
+    /*
+     * Rect diukur lazy lalu ditandai basi saat scroll/resize — bukan dikoreksi
+     * dengan delta scroll. Kartu berada di dalam section `position: sticky`
+     * yang berhenti bergerak ketika ter-pin, jadi koreksi delta akan membuat
+     * cached rect melenceng tepat di section yang sedang aktif.
+     *
+     * Mengukur ulang pada setiap `pointermove` juga dihindari: itu satu layout
+     * sinkron per event pointer, padahal spotlight menulis `--mx/--my` tepat
+     * sesudahnya — jadi halaman dipaksa layout ulang hanya karena kursor
+     * bergerak di atas kartu. Pengukuran ulang dijadwalkan per frame.
+     */
+    let rect: DOMRect | null = null;
+    let stale = true;
+    let raf = 0;
+    const measure = () => {
+      rect = el.getBoundingClientRect();
+      stale = false;
+    };
+    const invalidate = () => {
+      stale = true;
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        measure();
+      });
+    };
+
     const onMove = (e: PointerEvent) => {
-      const rect = el.getBoundingClientRect();
+      if (!rect || stale) measure();
+      if (!rect) return;
       el.style.setProperty('--mx', e.clientX - rect.left + 'px');
       el.style.setProperty('--my', e.clientY - rect.top + 'px');
     };
 
     el.addEventListener('pointermove', onMove, { passive: true });
-    return () => el.removeEventListener('pointermove', onMove);
+    window.addEventListener('scroll', invalidate, { passive: true });
+    window.addEventListener('resize', invalidate, { passive: true });
+    return () => {
+      cancelAnimationFrame(raf);
+      el.removeEventListener('pointermove', onMove);
+      window.removeEventListener('scroll', invalidate);
+      window.removeEventListener('resize', invalidate);
+    };
   }, []);
 
   useIsoLayoutEffect(() => {

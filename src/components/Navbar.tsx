@@ -1,16 +1,15 @@
 /**
  * Navbar.
  *
- * Perbaikan penting dibanding versi lama: panel mobile harus menghentikan
- * Perbaikan penting dibanding versi lama: panel mobile harus menghentikan
- * yang terlihat diam, dan pengguna akan merasa halaman "nyangkut" saat
- * mencoba menggulir daftar menu.
+ * Transparan di atas; setelah scroll 40px berubah menjadi solid + blur + garis
+ * emas. Panel mobile: kunci body scroll, kunci fokus, tutup dengan Esc —
+ * tanpa integrasi Lenis (scroll native murni).
+ *
+ * Tinggi z-index sengaja di atas seluruh section stacking (header z-[100]),
+ * supaya kartu section yang tertahan di `top: 0` tidak pernah menutupi menu.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { gsap } from '../lib/gsap';
-import { EASE, MQ } from '../lib/motion';
-import { useGsapMedia, useIsoLayoutEffect } from '../hooks/useGsapMedia';
-import { useSmoothScroll } from '../hooks/useSmoothScroll';
+import { useIsoLayoutEffect } from '../hooks/useIsoLayoutEffect';
 import { NAV_CTA, NAV_LINKS, SITE } from '../content';
 
 function Wordmark() {
@@ -23,7 +22,7 @@ function Wordmark() {
       <span className="font-display text-[1.75rem] leading-none font-semibold text-gold md:text-[2rem]">
         {SITE.wordmark}
       </span>
-      <span className="hidden font-mono text-[0.6875rem] tracking-[0.18em] text-bone-dim uppercase sm:inline">
+      <span className="hidden font-sans text-[0.6875rem] tracking-[0.18em] text-bone-dim uppercase sm:inline">
         {SITE.wordmarkSuffix}
       </span>
     </a>
@@ -60,7 +59,6 @@ export function Navbar() {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
-  const { lenis } = useSmoothScroll();
 
   /* Transparan di atas; semi-transparan + blur + garis emas setelah 40px. */
   useEffect(() => {
@@ -80,12 +78,9 @@ export function Navbar() {
     };
   }, []);
 
-  /* Panel terbuka: hentikan Lenis, kunci body, kunci fokus, tutup dengan Esc. */
+  /* Panel terbuka: kunci body, kunci fokus, tutup dengan Esc. */
   useIsoLayoutEffect(() => {
     if (!open) return;
-
-    // Integrasi Lenis: stop() menahan inersia dan gesture, start() melepas.
-    lenis?.stop();
 
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const { body } = document;
@@ -131,39 +126,9 @@ export function Navbar() {
       document.removeEventListener('keydown', onKeyDown);
       body.style.overflow = prevOverflow;
       body.style.paddingRight = prevPadding;
-      lenis?.start();
       (previouslyFocused ?? toggleRef.current)?.focus?.();
     };
-  }, [open, lenis]);
-
-  /* Animasi panel: fade container, lalu link masuk berurutan. */
-  useGsapMedia(
-    MQ.motion,
-    () => {
-      const panel = panelRef.current;
-      if (!panel || !open) return;
-
-      gsap.fromTo(
-        panel,
-        { opacity: 0 },
-        { opacity: 1, duration: 0.3, ease: EASE.reveal, overwrite: true },
-      );
-      gsap.fromTo(
-        panel.querySelectorAll('[data-menu-link]'),
-        { opacity: 0, y: 16 },
-        {
-          opacity: 1,
-          y: 0,
-          duration: 0.45,
-          ease: EASE.kinetic,
-          stagger: 0.06,
-          delay: 0.08,
-          overwrite: true,
-        },
-      );
-    },
-    [open],
-  );
+  }, [open]);
 
   const close = useCallback(() => setOpen(false), []);
 
@@ -171,7 +136,7 @@ export function Navbar() {
     <>
       <header
         className={
-          'fixed inset-x-0 top-0 z-40 transition-[background-color,backdrop-filter,border-color] duration-500 ease-out ' +
+          'fixed inset-x-0 top-0 z-[100] transition-[background-color,backdrop-filter,border-color] duration-500 ease-out ' +
           (scrolled && !open
             ? 'border-b border-gold-line bg-ink/72 backdrop-blur-xl'
             : 'border-b border-transparent bg-transparent')
@@ -226,7 +191,7 @@ export function Navbar() {
           role="dialog"
           aria-modal="true"
           aria-label="Menu navigasi"
-          className="fixed inset-0 z-50 flex flex-col bg-ink/97 backdrop-blur-xl md:hidden"
+          className="menu-panel fixed inset-0 z-[120] flex flex-col bg-ink/97 backdrop-blur-xl md:hidden"
           style={{ paddingTop: 'env(safe-area-inset-top)' }}
         >
           <div className="shell flex h-16 shrink-0 items-center justify-between">

@@ -2,7 +2,7 @@
  * Ornamen DNA — dua untai sinusoidal yang saling berpelintir.
  *
  * SVG murni, tanpa aset. Dipakai sebagai latar section "Kenapa Helixa" dan
- * diberi parallax lewat ScrollTrigger (speed berbeda dari konten).
+ * diberi parallax lewat transform paket `motion` (speed berbeda dari konten).
  */
 export function DnaHelix({ className = '' }: { className?: string }) {
   return (
@@ -17,7 +17,7 @@ export function DnaHelix({ className = '' }: { className?: string }) {
         <linearGradient id="dna-strand" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#F6E7B4" stopOpacity="0.5" />
           <stop offset="45%" stopColor="#D4AF37" stopOpacity="0.34" />
-          <stop offset="100%" stopColor="#996515" stopOpacity="0.12" />
+          <stop offset="100%" stopColor="#A17C1B" stopOpacity="0.12" />
         </linearGradient>
       </defs>
 

@@ -2,7 +2,7 @@
  * Audit responsif Helixa Olympiad via Chrome DevTools Protocol.
  * Tanpa dependency tambahan - memakai WebSocket bawaan Node.
  *
- * Untuk setiap lebar:
+ * Menyapu beragam lebar (320px s.d. 1920px) dan untuk tiap lebar:
  *   - deteksi scroll horizontal + elemen yang meluber
  *   - cek teks yang tumpang tindih / terpotong
  *   - screenshot full-page
@@ -219,8 +219,8 @@ for (const vp of VIEWPORTS) {
   const loaded = once('Page.loadEventFired');
   await send('Page.navigate', { url: URL_TARGET });
   await loaded;
-  // Beri waktu untuk animasi load hero, import three.js, dan SplitText selesai.
-  await sleep(3200);
+  // Animasi load: entrance hero selesai ~1.7s (kinetik 1.0s + chrome stagger).
+  await sleep(1300);
 
   const audit = await send('Runtime.evaluate', {
     expression: AUDIT,

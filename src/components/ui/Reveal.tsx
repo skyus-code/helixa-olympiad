@@ -1,127 +1,131 @@
+/**
+ * Reveal saat scroll — pengganti ScrollTrigger berbasis IntersectionObserver.
+ *
+ * Satu-satunya pekerjaan JS: menandai elemen dengan kelas ketikan elemen
+ * memasuki viewport. Animasi itu sendiri (fade + naik 24px) ditulis di CSS.
+ * Kelas hanya dipasang kalau `prefers-reduced-motion: no-preference` cocok,
+ * jadi pengguna reduced-motion (dan pengunjung tanpa JS) melihat konten
+ * langsung, tanpa state tersembunyi.
+ *
+ * `RevealGroup`: container yang anak-anaknya muncul berurutan (stagger 80ms,
+ * diatur CSS lewat nth-child). Karena itu anak container HARUS satu level:
+ * untuk daftar, pakai `as="ol"`/`as="ul"` dan jadikan item sebagai anak.
+ */
 import { useRef, type ElementType, type ReactNode } from 'react';
-import { gsap } from '../../lib/gsap';
-import { EASE, DUR, MQ } from '../../lib/motion';
-import { useGsapMedia, useIsoLayoutEffect } from '../../hooks/useGsapMedia';
+import { MQ } from '../../lib/motion';
+import { useMediaQuery } from '../../hooks/useMediaQuery';
+import { useIsoLayoutEffect } from '../../hooks/useIsoLayoutEffect';
+
+/*
+ * Satu IntersectionObserver dipakai bersama untuk semua elemen reveal.
+ * Versi sebelumnya membuat satu observer per elemen; dengan ~20 elemen itu
+ * berarti 20 observer yang masing-masing punya daftar target sendiri dan
+ * dipanggil pada setiap layout — biaya yang tidak terlihat di kode tapi
+ *measurable di main thread saat load.
+ */
+let shared: IntersectionObserver | null = null;
+
+function observer() {
+  if (shared) return shared;
+  shared = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        (e.target as HTMLElement).classList.add('is-in-view');
+        shared?.unobserve(e.target);
+      }
+    },
+    { threshold: 0.15, rootMargin: '0px 0px -12% 0px' },
+  );
+  return shared;
+}
+
+function watch(el: HTMLElement) {
+  observer().observe(el);
+}
+
+function unwatch(el: HTMLElement) {
+  shared?.unobserve(el);
+}
 
 type RevealProps = {
   children: ReactNode;
-  /** Elemen yang dibungkus. Default div. */
-  as?: ElementType;
-  /** Jeda tambahan dalam detik, untuk stagger manual antar kartu. */
-  delay?: number;
-  /** Jarak naik dalam piksel. */
-  y?: number;
   className?: string;
-  /** Berapa banyak piksel elemen harus masuk viewport sebelum memicu. */
-  start?: string;
+  /** `y` = fade + naik 24px. `x` = garis yang membesar horizontal (scaleX). */
+  variant?: 'y' | 'x';
+  delay?: number;
+  as?: ElementType;
 };
 
-/**
- * Reveal berbasis ScrollTrigger.
- *
- * Perbedaan penting dari versi lama: elemen TIDAK diberi `opacity: 0` lewat
- * CSS. State awal ditulis GSAP lewat `gsap.from()` pada saat ScrollTrigger
- * dibuat. Kalau JavaScript gagal dimuat, teks tetap terbaca penuh — bukan
- * terkubur dan tidak bisa di-scroll.
- */
 export function Reveal({
   children,
-  as: Tag = 'div',
-  delay = 0,
-  y = 32,
   className = '',
-  start = 'top 85%',
+  variant = 'y',
+  delay = 0,
+  as: Tag = 'div',
 }: RevealProps) {
   const ref = useRef<HTMLElement | null>(null);
+  const motionOk = useMediaQuery(MQ.motion);
 
-  useGsapMedia(MQ.motion, () => {
+  useIsoLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-
-    gsap.from(el, {
-      opacity: 0,
-      y,
-      duration: DUR.reveal,
-      ease: EASE.reveal,
-      delay,
-      force3D: true,
-      scrollTrigger: {
-        trigger: el,
-        start,
-        once: true,
-      },
-    });
-  });
+    el.classList.remove('reveal', 'reveal-x', 'is-in-view');
+    if (!motionOk) return;
+    el.classList.add(variant === 'x' ? 'reveal-x' : 'reveal');
+    if (!('IntersectionObserver' in window)) {
+      el.classList.add('is-in-view');
+      return;
+    }
+    watch(el);
+    return () => unwatch(el);
+  }, [motionOk, variant]);
 
   return (
-    <Tag ref={ref} className={className}>
+    <Tag
+      ref={ref as never}
+      className={className}
+      style={delay > 0 ? { transitionDelay: delay + 's' } : undefined}
+    >
       {children}
     </Tag>
   );
 }
 
-/**
- * Reveal untuk kelompok elemen sekaligus, dengan stagger.
- * Dipakai grid 4 kartu dan timeline 4 langkah.
- */
+type RevealGroupProps = {
+  children: ReactNode;
+  className?: string;
+  as?: 'div' | 'ol' | 'ul';
+  /** Atribut HTML ekstra, mis. `data-js` untuk penanda akordeon FAQ. */
+  htmlAttrs?: Record<string, string>;
+};
+
 export function RevealGroup({
   children,
-  selector,
   className = '',
-  stagger = DUR.revealStagger,
-  y = 32,
-  start = 'top 82%',
-}: {
-  children: ReactNode;
-  selector: string;
-  className?: string;
-  stagger?: number;
-  y?: number;
-  start?: string;
-}) {
-  const ref = useRef<HTMLDivElement | null>(null);
+  as: Tag = 'div',
+  htmlAttrs,
+}: RevealGroupProps) {
+  const ref = useRef<HTMLElement | null>(null);
+  const motionOk = useMediaQuery(MQ.motion);
 
-  useGsapMedia(MQ.motion, () => {
-    const root = ref.current;
-    if (!root) return;
-    const items = root.querySelectorAll(selector);
-    if (!items.length) return;
-
-    gsap.from(items, {
-      opacity: 0,
-      y,
-      duration: DUR.reveal,
-      ease: EASE.reveal,
-      stagger,
-      force3D: true,
-      scrollTrigger: { trigger: root, start, once: true },
-    });
-  });
-
-  return (
-    <div ref={ref} className={className}>
-      {children}
-    </div>
-  );
-}
-
-/**
- * Memastikan elemen yang dianimasikan GSAP tidak tertinggal tak terlihat
- * bila animasi gagal berjalan (mis. WebGL gagal, atau GSAP belum load).
- * Dipanggil sekali setelah mount.
- */
-export function useRevealSafety(ref: React.RefObject<HTMLElement | null>) {
   useIsoLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // Kalau dalam 1.2s elemen masih di opacity 0 padahal tidak ada animasi
-    // yang berjalan, lempar ke keadaan akhir.
-    const t = window.setTimeout(() => {
-      const opacity = Number(getComputedStyle(el).opacity);
-      if (opacity < 0.05 && gsap.getTweensOf(el).length === 0) {
-        gsap.set(el, { clearProps: 'all' });
-      }
-    }, 1200);
-    return () => window.clearTimeout(t);
-  }, [ref]);
+    el.classList.remove('reveal-group', 'is-in-view');
+    if (!motionOk) return;
+    el.classList.add('reveal-group');
+    if (!('IntersectionObserver' in window)) {
+      el.classList.add('is-in-view');
+      return;
+    }
+    watch(el);
+    return () => unwatch(el);
+  }, [motionOk]);
+
+  return (
+    <Tag ref={ref as never} className={className} {...htmlAttrs}>
+      {children}
+    </Tag>
+  );
 }

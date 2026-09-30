@@ -23,11 +23,23 @@
 
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Font di-host sendiri (variable woff2, total ~62 kB): preload di sini
+         membuat teks tampil dengan font-final tanpa hop ke pihak ketiga, dan
+         tanpa stylesheet render-blocking Google Fonts. `%BASE_URL%` diganti Vite
+         supaya ikut benar di GitHub Pages project page. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Manrope:wght@400;500;600&family=Space+Mono:wght@400&display=swap"
-      rel="stylesheet"
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="%BASE_URL%fonts/manrope-latin-var.woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="%BASE_URL%fonts/cormorant-garamond-latin-var.woff2"
+      crossorigin
     />
 
     <!-- Fallback agar konten tetap terbaca meski stylesheet gagal -->

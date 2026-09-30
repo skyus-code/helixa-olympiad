@@ -1,52 +1,128 @@
 /**
- * Verifikasi fitur interaktif & animasi.
+ * Verifikasi landing page Helixa Olympiad — sistem gerak baru.
  *
- * Script ini mengukur apa yang SEBENARNYA terjadi di browser, bukan sekadar
- * memeriksa bahwa kelas CSS ada. Untuk tiap fitur ia mencari bukti numerik:
- * transform yang berubah, tinggi yang beranimasi, atribut yang berubah.
+ * Stack resmi: paket `motion` + CSS native + IntersectionObserver. Tidak ada
+ * GSAP, Lenis, ScrollTrigger, SplitText, atau three.js/WebGL.
  *
- * Empat jebakan yang sudah ditangani di sini. Semuanya ditemukan lewat
- * kegagalan nyata, bukan dengan membaca dokumentasi:
+ * Dua lapis pemeriksaan:
+ *  A. STATIS (tanpa browser): package.json, impor sumber, token CSS, font.
+ *  B. BROWSER (Chrome headless via CDP): stacking antar-section, kinetic
+ *     hero, reveal saat scroll, garis progres, parallax, FAQ, navbar, kursor
+ *     kustom, magnet, spotlight, no-horizontal-scroll, dan reduced-motion.
  *
- *  1. GSAP TIDAK selalu menulis `transform`. Untuk komponen scale/translate
- *     terpisah ia menulis properti CSS `scale:` / `translate:` dan
- *     `transform: none`. Membaca `getComputedStyle(el).transform` saja
- *     membuat animasi scale dan parallax selalu terbaca sebagai 1.0 / 0.0.
- *  2. `Emulation.setEmulatedMedia` hanya bisa mengubah fitur `any-pointer` dan
- *     `any-hover`, bukan `pointer`/`hover` (fitur pointer utama). Untuk benar-
- *     benar membuat `pointer: coarse` harus lewat `setTouchEmulationEnabled`.
- *  3. Backbuffer WebGL dikosongkan setelah compositing, jadi
- *     `drawImage(canvas)` di luar requestAnimationFrame menghasilkan bidang
- *     kosong. Bukti piksel diambil dari tangkapan layar, bukan dari canvas.
- *  4. Headless merender WebGL lewat perangkat lunak, jadi satu frame bisa
- *     memakan ratusan milidetik. `setTimeout(70)` praktis berarti 500ms dan
- *     animasi 0.5 detik sudah selesai sebelum sempat diamati. Karena itu
- *     animasi disampel per frame (requestAnimationFrame), bukan per milidetik.
+ * Fallback-proxy yang harus dipahami sebelum mengubah:
+ *  - `Emulation.setEmulatedMedia` hanya bisa mengubah `prefers-reduced-motion`
+ *    dan `any-pointer`/`any-hover`. Fitur `pointer`/`hover` utama ditentukan
+ *    `Emulation.setTouchEmulationEnabled` (on -> coarse/none, off -> fine/hover).
+ *  - Headless Chrome default-nya `prefers-reduced-motion: reduce`; verifikasi
+ *    memaksa `no-preference` di bagian animasi aktif.
  *
- * Semua kode yang dikirim ke halaman ditulis dengan `String.raw`. Backslash
- * di dalam template literal biasa dimakan parser (`\s` menjadi `s`, bukan
- * regex whitespace), dan dua kegagalan berturut-turut lahir dari itu.
- *
- * Pakai: node scripts/verify.mjs [url]
+ * Pakai: node scripts/verify.mjs [url]   (jalankan setelah `npm run build`)
  */
-
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
 
+const ROOT = process.cwd();
 const URL_TARGET = process.argv[2] ?? 'http://localhost:4200/';
 const PORT = 9227;
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 
+let pass = 0;
+let fail = 0;
+function check(name, ok, detail = '') {
+  if (ok) {
+    pass++;
+    console.log('  ok   ' + name + (detail ? '  (' + detail + ')' : ''));
+  } else {
+    fail++;
+    console.log('  FAIL ' + name + (detail ? '  (' + detail + ')' : ''));
+  }
+}
+const alphaOf = (c) => {
+  if (!c || c === 'transparent') return 0;
+  if (c.includes('/')) {
+    const m = c.split('/')[1].match(/([\d.]+)\s*\)/);
+    return m ? Number(m[1]) : 1;
+  }
+  const m = c.match(/rgba?\(([^)]+)\)/);
+  if (m) {
+    const p = m[1].split(',').map((s) => s.trim());
+    return p.length === 4 ? Number(p[3]) : 1;
+  }
+  return 1;
+};
+
+/* ==================================================================
+   A. PEMERIKSAAN STATIS
+   ================================================================== */
+
+console.log('\n=== A1. DEPENDENSI & SUMBER BERSIH ===');
+{
+  const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+  const all = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+  const forbidden = ['gsap', '@gsap/react', 'lenis', 'three', '@types/three'];
+  const found = Object.keys(all)
+    .filter((k) => forbidden.includes(k) || forbidden.some((f) => k.startsWith(f + '/')))
+    .map((k) => k + '@' + all[k]);
+  check('gsap/lenis/three tidak ada di package.json', found.length === 0,
+    found.length ? found.join(', ') : 'hanya react/react-dom/motion + tooling');
+  check('Paket motion terpasang', !!all.motion, all.motion ? 'motion@' + all.motion : 'tidak ada');
+
+  const src = join(ROOT, 'src');
+  const srcFiles = [];
+  const walk = (dir) => {
+    for (const f of readdirSync(dir)) {
+      const p = join(dir, f);
+      if (statSync(p).isDirectory()) walk(p);
+      else srcFiles.push(p);
+    }
+  };
+  walk(src);
+  const bad = [];
+  for (const f of srcFiles) {
+    const raw = readFileSync(f, 'utf8');
+    // Buang komentar dulu: penyebutan "ScrollTrigger" / "gsap" di komentar
+    // penjelas bukanlah penggunaan nyata.
+    const text = raw
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '');
+    for (const pat of ["from 'gsap", 'from "gsap', 'ScrollTrigger', 'SplitText', 'lenis',
+      'three', 'HeroCanvas', 'useSmoothScroll', 'useKineticText', 'useGsapMedia']) {
+      if (text.includes(pat)) { bad.push(f.replace(ROOT, '') + ' -> ' + pat); }
+    }
+  }
+  check('Tidak ada impor/kode library terlarang di src/', bad.length === 0,
+    bad.length ? bad[0] : 'bersih');
+  check('useSmoothScroll.tsx telah dihapus',
+    !existsSync(join(src, 'hooks', 'useSmoothScroll.tsx')));
+}
+
+console.log('\n=== A2. TOKEN & CSS ===');
+{
+  const css = readFileSync(join(ROOT, 'src', 'index.css'), 'utf8');
+  const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
+  check('--color-gold-bronze bernilai #a17c1b', css.includes('--color-gold-bronze: #a17c1b'));
+  check('Tidak ada --font-mono / Space Mono', !css.includes('--font-mono') && !css.includes('font-mono'),
+    css.includes('font-mono') ? 'font-mono masih dipakai' : '');
+  check('index.html tidak memuat Space Mono', !html.includes('Space+Mono'));
+  check('Tidak ada blok .lenis* di CSS', !css.includes('.lenis'));
+  check('Tidak ada animasi infinite hero-ambient', !css.includes('infinite'));
+  check('Stack mobile & reduced-motion override ada',
+    css.includes('@media (max-width: 767px)') && css.includes('prefers-reduced-motion: reduce') &&
+      css.includes('.stack-wrap {'));
+}
+
+/* ==================================================================
+   B. BROWSER
+   ================================================================== */
+
 const chrome = spawn(
   CHROME,
   [
-    '--headless=new',
-    '--disable-gpu',
-    '--hide-scrollbars',
-    '--no-sandbox',
-    '--no-first-run',
-    '--force-color-profile=srgb',
+    '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-sandbox',
+    '--no-first-run', '--force-color-profile=srgb',
     `--remote-debugging-port=${PORT}`,
     '--user-data-dir=' + process.env.TEMP + '\\helixa-verify-profile',
     'about:blank',
@@ -57,31 +133,22 @@ process.on('exit', () => chrome.kill());
 
 async function ready() {
   for (let i = 0; i < 60; i++) {
-    try {
-      if ((await fetch(`http://127.0.0.1:${PORT}/json/version`)).ok) return;
-    } catch {
-      /* DevTools belum siap */
-    }
+    try { if ((await fetch(`http://127.0.0.1:${PORT}/json/version`)).ok) return; }
+    catch { /* DevTools belum siap */ }
     await sleep(250);
   }
   throw new Error('DevTools tidak merespons');
 }
 await ready();
 
-const t = await (
-  await fetch(`http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(URL_TARGET)}`, { method: 'PUT' })
-).json();
+const t = await (await fetch(`http://127.0.0.1:${PORT}/json/new?${encodeURIComponent(URL_TARGET)}`, { method: 'PUT' })).json();
 const ws = new WebSocket(t.webSocketDebuggerUrl);
-await new Promise((res, rej) => {
-  ws.onopen = res;
-  ws.onerror = rej;
-});
+await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
 
 let id = 0;
 const pend = new Map();
 const waiters = new Map();
 const pageProblems = [];
-
 ws.onmessage = (e) => {
   const m = JSON.parse(e.data);
   if (m.id && pend.has(m.id)) {
@@ -96,10 +163,8 @@ ws.onmessage = (e) => {
   } else if (m.method === 'Log.entryAdded' && m.params.entry.level === 'error') {
     pageProblems.push('console.error: ' + m.params.entry.text);
   }
-  const w = waiters.get(m.method);
-  if (w) w.forEach((f) => f(m.params));
+  if (waiters.has(m.method)) waiters.get(m.method).forEach((f) => f(m.params));
 };
-
 const send = (method, params = {}) => {
   const n = ++id;
   return new Promise((resolve, reject) => {
@@ -107,966 +172,582 @@ const send = (method, params = {}) => {
     ws.send(JSON.stringify({ id: n, method, params }));
   });
 };
-const once = (m) =>
-  new Promise((res) => {
-    const f = (p) => {
-      waiters.set(m, (waiters.get(m) ?? []).filter((x) => x !== f));
-      res(p);
-    };
-    waiters.set(m, [...(waiters.get(m) ?? []), f]);
-  });
+const once = (m) => new Promise((res) => {
+  const f = (p) => {
+    waiters.set(m, (waiters.get(m) ?? []).filter((x) => x !== f));
+    res(p);
+  };
+  waiters.set(m, [...(waiters.get(m) ?? []), f]);
+});
 const evalJs = async (expression) => {
   const r = await send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
-  if (r.exceptionDetails) {
-    throw new Error(r.exceptionDetails.text + ' :: ' + expression.slice(0, 200));
-  }
+  if (r.exceptionDetails) throw new Error((r.exceptionDetails.exception?.description ?? r.exceptionDetails.text) + ' :: ' + expression.slice(0, 120));
   return r.result.value;
 };
-
-/**
- * Helper yang di-inject ke halaman. Dipisah dari payload lain supaya hanya
- * perlu dikirim ulang satu kali per navigasi.
- *
- * __xform membaca transform dari bentuk apa pun yang dipakai GSAP.
- * __sq merapikan whitespace hasil textContent tanpa regex yang rawan dimakan
- * escape.
- */
 const HELPERS = String.raw`
 window.__sq = (s) => s.split(/\s+/).join(' ').trim();
 window.__xform = (el) => {
-  const out = { raw: '', x: 0, y: 0, sx: 1, sy: 1 };
+  const out = { x: 0, y: 0, sx: 1, sy: 1 };
   if (!el) return out;
   const cs = getComputedStyle(el);
-  const num = (v, fb) => {
-    const n = parseFloat(v);
-    return Number.isFinite(n) ? n : fb;
-  };
-
-  const tp = (cs.translate || 'none').split(/\s+/);
-  if (tp.length === 1) out.x = num(tp[0], 0);
-  else if (tp.length >= 2) { out.x = num(tp[0], 0); out.y = num(tp[1], 0); }
-
-  const sp = (cs.scale || 'none').split(/\s+/);
-  if (sp.length === 1) { out.sx = num(sp[0], 1); out.sy = out.sx; }
-  else if (sp.length >= 2) { out.sx = num(sp[0], 1); out.sy = num(sp[1], 1); }
-
   const tf = cs.transform;
-  out.raw = (el.style.transform || '') + ' | translate:' + (cs.translate || 'none')
-          + ' | scale:' + (cs.scale || 'none');
   if (tf && tf !== 'none') {
     const m = tf.match(/matrix\(([^)]+)\)/);
     if (m) {
       const p = m[1].split(',').map(Number);
-      out.x += p[4] || 0;
-      out.y += p[5] || 0;
-      out.sx *= p[0];
-      out.sy *= p[3];
+      out.x += p[4] || 0; out.y += p[5] || 0;
+      out.sx *= p[0]; out.sy *= p[3];
     } else {
       const mm = tf.match(/translate(3d|X|Y)?\(([^)]+)\)/);
       if (mm) {
         const p = mm[2].split(/[,\s]+/).filter(Boolean).map(Number);
-        out.x += p[0] || 0;
-        out.y += p[1] || 0;
+        out.x += p[0] || 0; out.y += p[1] || 0;
       }
       const ss = tf.match(/scale(3d|X|Y)?\(([^)]+)\)/);
       if (ss) {
         const p = ss[2].split(',').map(Number);
-        out.sx *= p[0];
-        out.sy *= p.length > 1 ? p[1] : p[0];
+        out.sx *= p[0]; out.sy *= p.length > 1 ? p[1] : p[0];
       }
     }
   }
+  const sp = (cs.scale || 'none').split(/\s+/);
+  if (sp.length === 1) { const n = parseFloat(sp[0]); if (Number.isFinite(n)) { out.sx *= n; out.sy *= n; } }
   return out;
 };
 true;
 `;
-
 await send('Page.enable');
 await send('Runtime.enable');
 await send('Log.enable');
 
-let pass = 0;
-let fail = 0;
-function check(name, ok, detail = '') {
-  if (ok) {
-    pass++;
-    console.log('  ok   ' + name + (detail ? '  (' + detail + ')' : ''));
-  } else {
-    fail++;
-    console.log('  FAIL ' + name + (detail ? '  (' + detail + ')' : ''));
-  }
-}
-
-/** Durasi CSS ("0.7s", "700ms", daftar) -> detik terbesar. */
-const durSec = (v) =>
-  String(v)
-    .split(',')
-    .map((s) => {
-      const x = s.trim();
-      if (x.endsWith('ms')) return parseFloat(x) / 1000;
-      if (x.endsWith('s')) return parseFloat(x);
-      return 0;
-    })
-    .reduce((a, b) => Math.max(a, b), 0);
-
-/** Alpha dari warna hitung: mendukung rgba() dan oklab(... / a). */
-const alphaOf = (c) => {
-  if (!c) return 1;
-  if (c === 'transparent') return 0;
-  if (c.includes('/')) {
-    const m = c.split('/')[1].match(/([\d.]+)\s*\)/);
-    return m ? Number(m[1]) : 1;
-  }
-  const m = c.match(/rgba?\(([^)]+)\)/);
-  if (m) {
-    const p = m[1].split(',').map((s) => s.trim());
-    return p.length === 4 ? Number(p[3]) : 1;
-  }
-  return 1;
-};
-
-async function setMotion(mode, pointer) {
+async function setMotion(mode, coarse) {
   const features = [{ name: 'prefers-reduced-motion', value: mode }];
-  if (pointer === 'fine') {
-    features.push({ name: 'any-pointer', value: 'fine' }, { name: 'any-hover', value: 'hover' });
-  } else if (pointer === 'coarse') {
-    features.push({ name: 'any-pointer', value: 'coarse' }, { name: 'any-hover', value: 'none' });
-  }
+  features.push({ name: 'any-pointer', value: coarse ? 'coarse' : 'fine' },
+    { name: 'any-hover', value: coarse ? 'none' : 'hover' });
   await send('Emulation.setEmulatedMedia', { features });
-  await send('Emulation.setTouchEmulationEnabled', {
-    enabled: pointer === 'coarse',
-    maxTouchPoints: pointer === 'coarse' ? 5 : 1,
+  await send('Emulation.setTouchEmulationEnabled',
+    coarse ? { enabled: true, maxTouchPoints: 5 } : { enabled: false });
+}
+async function setViewport(w, h, mobile) {
+  await send('Emulation.setDeviceMetricsOverride', {
+    width: w, height: h, deviceScaleFactor: mobile ? 2 : 1, mobile,
+    screenWidth: w, screenHeight: h,
   });
 }
-
 async function goto() {
   const loaded = once('Page.loadEventFired');
   await send('Page.navigate', { url: URL_TARGET });
   await loaded;
-  await sleep(3800);
+  await sleep(2200); // entrance hero selesai (kinetik 1.0s + chrome hingga ~1.7s)
   await evalJs(HELPERS);
-}
-
-/**
- * Muat ulang lalu langsung mulai mengukur, tanpa jeda panjang. Dipakai untuk
- * animasi yang hanya berjalan sekali saat mount: tanpa muat ulang, semua
- * huruf sudah berada di posisi akhir ketika pengukuran dimulai.
- */
-async function reloadFast() {
-  const loaded = once('Page.loadEventFired');
-  await send('Page.reload');
-  await loaded;
-  await sleep(500);
-  await evalJs(HELPERS);
-}
-
-/* ==================================================================
-   BAGIAN 1 - desktop, animasi aktif
-   ================================================================== */
-
-await send('Emulation.setDeviceMetricsOverride', {
-  width: 1440, height: 900, deviceScaleFactor: 1, mobile: false,
-  screenWidth: 1440, screenHeight: 900,
-});
-await setMotion('no-preference', 'fine');
-await goto();
-
-console.log('\n=== 1. LENIS SMOOTH SCROLL ===');
-{
-  const env = await evalJs(String.raw`(() => ({
-    lenisClass: document.documentElement.classList.contains('lenis'),
-    htmlClass: document.documentElement.className,
-  }))()`);
-  // 'lenis-smooth' hanya ditambahkan Lenis ketika isScrolling === 'smooth',
-  // jadi kelas itu harus dicek DI TENGAH scroll, bukan saat halaman diam.
-  check('Kelas lenis menempel ke <html>', env.lenisClass, 'class="' + env.htmlClass + '"');
-
-  const smooth = await evalJs(String.raw`(async () => {
-    const html = document.documentElement;
-    window.scrollTo(0, 0);
-    await new Promise(r => setTimeout(r, 700));
-    const y0 = window.scrollY;
-    const wheel = () => window.dispatchEvent(new WheelEvent('wheel', {
-      deltaY: 400, bubbles: true, cancelable: true,
-    }));
-    // Sampel per frame, bukan per setTimeout: di mesin yang sibuk sebuah
-    // setTimeout(90) bisa membayar jauh lebih lama, dan scroll mulus sudah
-    // selesai sebelum sampel pertama diambil -- "lompatan instan" yang palsu.
-    // Selama halaman merender sekali pun di tengah animasi (Lenis digerakkan
-    // rAF, jadi thread beku berarti animasi ikut beku), sampel menangkap
-    // posisi antara.
-    const samples = [];
-    const t0 = performance.now();
-    for (let i = 0; i < 3; i++) {
-      wheel();
-      await new Promise(r => requestAnimationFrame(r));
-    }
-    while (performance.now() - t0 < 4000 && samples.length < 240) {
-      samples.push({ y: window.scrollY, cls: html.className });
-      await new Promise(r => requestAnimationFrame(r));
-    }
-    await new Promise(r => setTimeout(r, 500));
-    const end = window.scrollY;
-    const ys = samples.map(s => s.y);
-    const beyond = ys.filter(y => y > 30);
-    const mid = beyond.length ? Math.min(...beyond) : end;
-    return { y0, mid, end, count: samples.length,
-             interpolated: mid < end - 5, moved: end > 50,
-             hadSmoothCls: samples.some(s => s.cls.includes('lenis-smooth')) };
-  })()`);
-  check('Scroll bergerak ke bawah', smooth.moved, 'y0=' + smooth.y0 + ' akhir=' + Math.round(smooth.end));
-  check('Ada interpolasi (bukan lompat langsung)', smooth.interpolated,
-    'sampel ' + smooth.count + ' frame, y antara min=' + Math.round(smooth.mid) + ' dari ' + Math.round(smooth.end));
-  check('Kelas lenis-smooth aktif saat menggulir', smooth.hadSmoothCls,
-    'diamati di ' + smooth.count + ' sampel frame');
-
-  // ScrollTrigger disinkronkan dengan Lenis: trigger harus ikut posisi scroll.
-  // Diuji lewat elemen reveal, bukan lewat global yang tidak diekspos.
-  const synced = await evalJs(String.raw`(async () => {
-    const step = document.querySelectorAll('[data-step]')[1];
-    const read = () => Number(getComputedStyle(step).opacity);
-    window.scrollTo(0, 0);
-    await new Promise(r => setTimeout(r, 900));
-    const top = read();
-    step.scrollIntoView({ block: 'center' });
-    await new Promise(r => setTimeout(r, 1300));
-    return { top, mid: read() };
-  })()`);
-  check('ScrollTrigger sinkron dengan scroll Lenis', synced.mid > synced.top,
-    'opacity ' + synced.top.toFixed(2) + ' -> ' + synced.mid.toFixed(2));
-}
-
-console.log('\n=== 2. KINETIC TYPOGRAPHY (SplitText) ===');
-{
-  const split = await evalJs(String.raw`(() => {
-    const el = document.querySelector('[data-kinetic-lead]');
-    if (!el) return { found: false };
-    return {
-      found: true,
-      charCount: el.querySelectorAll('div,span').length,
-      ariaLabel: el.getAttribute('aria-label') || el.parentElement.getAttribute('aria-label') || '',
-    };
-  })()`);
-  check('Elemen kinetic dipecah jadi huruf', split.found && split.charCount > 5,
-    split.charCount + ' node anak');
-  check('Teks utuh masih terbaca (aria-label)', split.ariaLabel.length > 0,
-    '"' + split.ariaLabel.slice(0, 40) + '"');
-
-  const headline = await evalJs(String.raw`(() => {
-    const h1 = document.querySelector('h1');
-    return { opacity: getComputedStyle(h1).opacity, text: window.__sq(h1.textContent) };
-  })()`);
-  check('Headline terlihat (bukan tertinggal opacity 0)', Number(headline.opacity) > 0.9,
-    'opacity=' + headline.opacity);
-  check('Teks headline benar', headline.text.includes('Asah nalar') && headline.text.includes('sains'),
-    '"' + headline.text + '"');
-
-  const accent = await evalJs(String.raw`(() => {
-    const el = document.querySelector('[data-kinetic-accent]');
-    if (!el) return null;
-    return { text: el.textContent.trim(),
-             grad: getComputedStyle(el).backgroundImage.includes('gradient') };
-  })()`);
-  check('Kata "sains" ada gradasi emas', !!accent && accent.grad,
-    accent ? accent.text : 'tidak ditemukan');
-
-  // Huruf harus benar-benar bergerak, bukan hanya muncul di tempat akhir.
-  // Animasi ini hanya berjalan sekali saat mount, jadi perekam harus terpasang
-  // SEBELUM dokumen baru dieksekusi. Event `load` justru terlambat: React sudah
-  // mount dan timeline sudah berjalan jauh saat `load` menyala, sehingga
-  // pengukuran yang dimulai sesudahnya selalu melihat posisi akhir saja.
-  //
-  // Menyampel transform lewat requestAnimationFrame juga tidak cukup di
-  // headless: thread utama bisa macet lebih lama dari durasi tween (1,1 dtk),
-  // dan GSAP mengejar selisih jam dinding SEKALIGUS begitu thread pulih --
-  // tidak ada satu frame pun yang pernah menampilkan posisi antara (terbukti:
-  // 149 frame terekam, semuanya y = 0). Maka perekam memakai MutationObserver
-  // dengan `attributeOldValue: true`: setiap gaya yang ditulis GSAP menyimpan
-  // nilai lama dalam riwayat mutasi, dan dari rantai oldValue itu posisi puncak
-  // animasi dapat dibaca ulang apa pun nasib thread. Observer jalan di
-  // mikro-task, tidak bergantung pada rAF sama sekali.
-  //
-  // WebGL ikut diblokir di halaman pengukuran ini (renderer fallback headless
-  // membekukan 1-2 detik penuh tiap frame). Mesh bukan fitur yang diuji di
-  // sini; jalur fallback WebGL memang didukung aplikasi, dan bukti WebGL yang
-  // asli ada di bagian 5 pada halaman biasa.
-  const rec = await send('Page.addScriptToEvaluateOnNewDocument', {
-    source: String.raw`
-      const __origGetContext = HTMLCanvasElement.prototype.getContext;
-      HTMLCanvasElement.prototype.getContext = function (type, ...args) {
-        if (String(type).includes('webgl')) return null;
-        return __origGetContext.call(this, type, ...args);
-      };
-      window.__kin = { segments: 0, maxY: 0, seen: [], done: false, raw: [], frameMax: 0,
-        frames: 0, charFound: false, cssText: '' };
-      const yOf = (ts) => {
-        if (typeof ts !== 'string') return 0;
-        // Bentuk gaya yang ditulis GSAP ke elemen huruf (semuanya diamati
-        // langsung di lapangan):
-        //  - computed: matrix(...) atau matrix3d(...);
-        //  - inline transform: translate3d(Xpx, Ypx, 0px) -- inilah yang
-        //    ditulis GSAP untuk yPercent;
-        //  - properti terpisah 3.13+: translate: Xpx Ypx (bisa "none").
-        const t3 = /translate3d\(([^)]+)\)/.exec(ts);
-        if (t3) {
-          const parts = t3[1].split(',').map((s) => parseFloat(s.trim()));
-          const v = Number.isFinite(parts[1]) ? parts[1] : 0;
-          return Number.isFinite(v) && v !== 0 ? Math.round(v) : 0;
-        }
-        const m = /matrix\(([^)]+)\)/.exec(ts);
-        if (m) {
-          const v = Number(m[1].split(',')[5]);
-          return Number.isFinite(v) ? Math.round(v) : 0;
-        }
-        const t = /(?:^|;)\s*translate\s*:\s*([^;]+)/.exec(ts);
-        if (t) {
-          const parts = t[1].trim().split(/\s+/);
-          const v = parseFloat(parts.length > 1 ? parts[1] : parts[0]);
-          return Number.isFinite(v) ? Math.round(v) : 0;
-        }
-        return 0;
-      };
-      const computedY = (el) => yOf(getComputedStyle(el).transform);
-      let charRef = null;
-      const watchChar = (char) => {
-        charRef = char;
-        window.__kin.charFound = true;
-        let maxY = 0;
-        let n = 0;
-        const obs = new MutationObserver((muts) => {
-          for (const m of muts) {
-            if (m.type !== 'attributes') continue;
-            window.__kin.segments += 1;
-            if (window.__kin.raw.length < 8 && m.oldValue) {
-              window.__kin.raw.push(m.oldValue.slice(0, 120));
-            }
-            const y = yOf(m.oldValue || '');
-            if (y > maxY) maxY = y;
-            if (window.__kin.seen.length < 20) window.__kin.seen.push(y);
-          }
-        });
-        obs.observe(char, { attributes: true, attributeFilter: ['style'], attributeOldValue: true });
-        const finish = () => {
-          window.__kin.cssText = char.getAttribute('style') || '';
-          // Baca nilai akhir lewat computed (matriks) karena nilai inline
-          // transform bisa kosong bila GSAP memakai properti translate.
-          window.__kin.maxY = Math.max(maxY, computedY(char));
-          window.__kin.done = true;
-        };
-        const waiter = () => {
-          n += 1;
-          // 4 detik sejak huruf muncul sudah jauh melewati tween 1,1 detik.
-          if (n > 16) return finish();
-          setTimeout(waiter, 250);
-        };
-        waiter();
-      };
-      // Pengamat paralel: sampel per rAF dari nilai computed (resolusi matriks),
-      // supaya ada pembanding independen terhadap rantai mutasi.
-      const rAFloop = () => {
-        const root = document.querySelector('[data-kinetic-lead]');
-        if (!root) { window.__kin.rAFpending = true; requestAnimationFrame(rAFloop); return; }
-        const char = [...root.querySelectorAll('div')].find(
-          (d) => d.children.length === 0 && d.textContent.length === 1);
-        if (!char) { window.__kin.rAFpending = true; requestAnimationFrame(rAFloop); return; }
-        window.__kin.rAFpending = false;
-        const y = computedY(char);
-        if (y > window.__kin.frameMax) window.__kin.frameMax = y;
-        window.__kin.frames += 1;
-        if (window.__kin.done) return;
-        requestAnimationFrame(rAFloop);
-      };
-      const findChar = () => {
-        const root = document.querySelector('[data-kinetic-lead]');
-        if (!root) { setTimeout(findChar, 20); return; }
-        // Huruf = div terdalam dengan teks satu karakter. Memilih div pertama
-        // keliru: dengan mask: 'lines' SplitText membuat wrapper mask/baris/
-        // kata yang memang tidak pernah dianimasikan.
-        const char = [...root.querySelectorAll('div')].find(
-          (d) => d.children.length === 0 && d.textContent.length === 1,
-        );
-        if (!char) { setTimeout(findChar, 20); return; }
-        watchChar(char);
-        requestAnimationFrame(rAFloop);
-      };
-      setTimeout(findChar, 10);
-    `,
-  });
-  await send('Page.bringToFront');
-  const kinLoaded = once('Page.loadEventFired');
-  await send('Page.reload');
-  await kinLoaded;
-  let kin = { done: false };
-  for (let i = 0; i < 160 && !kin.done; i++) {
-    await sleep(500);
-    kin = await evalJs(String.raw`window.__kin || { done: false }`);
-  }
-  await send('Page.removeScriptToEvaluateOnNewDocument', { identifier: rec.identifier });
-
-  check('Huruf bergerak dari bawah (ada y > 5px saat animasi)',
-    kin.frames > 0 && (kin.frameMax > 5 || kin.maxY > 5),
-    'computedMax=' + kin.frameMax + ' mutasi=' + kin.segments + ' yMutasiMax='
-      + kin.maxY + ' frames=' + kin.frames + ' char=' + kin.charFound
-      + (kin.raw.length ? ' raw0=' + JSON.stringify(kin.raw[0]) : '')
-      + ' cssText=' + JSON.stringify((kin.cssText || '').slice(0, 80)));
-}
-
-console.log('\n=== 3. SCROLL REVEAL (ScrollTrigger) ===');
-{
-  // Muat ulang: reveal memakai `once: true`, jadi kalau halaman sudah pernah
-  // digulir, elemen yang diukur bisa saja sudah final dan pemeriksaan
-  // "awalnya tersembunyi" akan salah lulus.
-  await goto();
-  const reveal = await evalJs(String.raw`(async () => {
-    const sel = '[data-spotlight-card],[data-step],[data-faq-item],[data-perdana-row],[data-rule]';
-    const total = document.querySelectorAll(sel).length;
-    const below = [...document.querySelectorAll(sel)]
-      .filter(e => e.getBoundingClientRect().top > window.innerHeight)
-      .map(e => Number(getComputedStyle(e).opacity));
-    const step = Math.round(window.innerHeight * 0.5);
-    for (let y = 0; y < document.body.scrollHeight; y += step) {
-      window.scrollTo(0, y);
-      await new Promise(r => setTimeout(r, 200));
-    }
-    await new Promise(r => setTimeout(r, 1400));
-    const all = [...document.querySelectorAll(sel)];
-    return { total, below: below.length, beforeMax: Math.max(...below, 0),
-             hidden: all.filter(e => Number(getComputedStyle(e).opacity) < 0.9).length };
-  })()`);
-  check('Elemen reveal ada', reveal.total > 10, reveal.total + ' elemen');
-  check('Elemen di bawah fold awalnya tersembunyi',
-    reveal.below > 0 && reveal.beforeMax < 0.05,
-    reveal.below + ' elemen di bawah fold, opacity=' + reveal.beforeMax.toFixed(2));
-  check('Semua ter-reveal setelah scroll', reveal.hidden === 0,
-    reveal.hidden + ' masih tersembunyi');
-}
-
-console.log('\n=== 4. FAQ ACCORDION (height auto) ===');
-{
-  const faq = await evalJs(String.raw`(async () => {
-    const buttons = [...document.querySelectorAll('[data-faq-item] button')];
-    const panels = [...document.querySelectorAll('[role="region"][id^="faq-panel"]')];
-    const b1 = buttons[0], b2 = buttons[1];
-    const p1 = panels[0], p2 = panels[1];
-    if (!b1 || !b2) return { found: false };
-
-    const h0 = p1.getBoundingClientRect().height;
-    const p2h0 = p2.getBoundingClientRect().height;
-    const p2inert0 = p2.hasAttribute('inert');
-
-    b2.click();
-    // Sampel per frame, bukan per milidetik (lihat catatan di kepala file).
-    const samples = [];
-    for (let i = 0; i < 45; i++) {
-      await new Promise(r => requestAnimationFrame(r));
-      samples.push(Math.round(p2.getBoundingClientRect().height));
-    }
-    await new Promise(r => setTimeout(r, 400));
-    const h2 = p2.getBoundingClientRect().height;
-    const p2inert1 = p2.hasAttribute('inert');
-    const h1after = p1.getBoundingClientRect().height;
-    const p1inert1 = p1.hasAttribute('inert');
-    const expanded = b2.getAttribute('aria-expanded');
-
-    b2.click();
-    await new Promise(r => setTimeout(r, 900));
-    const h2closed = p2.getBoundingClientRect().height;
-    const p2inert2 = p2.hasAttribute('inert');
-
-    return { found: true, h0, p2h0, p2inert0, samples, h2, p2inert1, h1after, p1inert1,
-             expanded, h2closed, p2inert2 };
-  })()`);
-
-  check('Panel pertama terbuka awal', faq.h0 > 20, 'h=' + Math.round(faq.h0));
-  check('Panel tertutup mulai dari 0', faq.p2h0 < 2, 'h=' + Math.round(faq.p2h0));
-  check('Panel tertutup punya inert', faq.p2inert0 === true);
-  // Tween nyata berarti tinggi berubah bertahap, bukan 0 lalu langsung akhir.
-  // Headless merender WebGL lewat perangkat lunak sehingga hanya 4-6 frame
-  // yang tertangkap selama tween 0.5 detik. Karena itu yang diperiksa bukan
-  // banyaknya frame, melainkan bentuk rekam jejaknya: harus naik monoton,
-  // punya beberapa tinggi antara 0 dan tinggi akhir, dan tidak melompat.
-  const traj = faq.samples;
-  const distinct = new Set(traj).size;
-  const monotonic = traj.every((h, i) => i === 0 || h >= traj[i - 1]);
-  const partial = traj.filter((h) => h > 0 && h < faq.h2 - 1);
-  check('Tinggi beranimasi bertahap (bukan lompat)',
-    partial.length >= 1 && distinct >= 3 && monotonic,
-    'sampel=' + JSON.stringify(traj.slice(0, 8)) + ' akhir=' + Math.round(faq.h2)
-      + ' (' + distinct + ' tinggi berbeda, monoton=' + monotonic + ')');
-  check('Panel terbuka height benar', faq.h2 > 20, 'h=' + Math.round(faq.h2));
-  check('inert dilepas saat terbuka', faq.p2inert1 === false);
-  check('aria-expanded=true', faq.expanded === 'true');
-  check('Panel lama tertutup (satu-buka)', faq.h1after < 5, 'h=' + Math.round(faq.h1after));
-  check('inert dikembalikan saat tertutup', faq.p1inert1 === true);
-  check('Panel bisa ditutup lagi', faq.h2closed < 5 && faq.p2inert2 === true,
-    'h=' + Math.round(faq.h2closed));
-}
-
-console.log('\n=== 5. WEBGL CANVAS ===');
-{
-  const webgl = await evalJs(String.raw`(async () => {
-    window.scrollTo(0, 0);
-    const c = document.querySelector('canvas');
-    if (!c) return { found: false };
-    // three.js dimuat lewat import() dinamis dan dirender perangkat lunak di
-    // headless, jadi waktu scene siap tidak bisa ditebak dari angka tetap.
-    for (let i = 0; i < 70; i++) {
-      await new Promise(r => setTimeout(r, 150));
-      if (Number(getComputedStyle(c).opacity) > 0.9) break;
-    }
-    const r = c.getBoundingClientRect();
-    return { found: true, w: Math.round(r.width), h: Math.round(r.height),
-             opacity: getComputedStyle(c).opacity,
-             hasContext: !!(c.getContext('webgl2') || c.getContext('webgl')) };
-  })()`);
-  check('Canvas ada', webgl.found, webgl.w + 'x' + webgl.h);
-  check('Canvas punya konteks WebGL', webgl.hasContext);
-  check('Canvas terlihat (fade-in selesai)', Number(webgl.opacity) > 0.9,
-    'opacity=' + webgl.opacity);
-
-  // Bukti mesh benar-benar memberi piksel: bandingkan tangkapan layar area
-  // canvas dengan canvas terlihat vs disembunyikan. Metode ini memakai hasil
-  // compositing browser, jadi tidak terganggu backbuffer WebGL yang dikosongkan
-  // setelah tiap frame.
-  const clip = await evalJs(String.raw`(() => {
-    const b = document.querySelector('canvas').getBoundingClientRect();
-    return { x: Math.round(b.left + window.scrollX), y: Math.round(b.top + window.scrollY),
-             width: Math.round(b.width), height: Math.round(b.height), scale: 1 };
-  })()`);
-  const shotOn = await send('Page.captureScreenshot', { format: 'png', clip });
-  await evalJs(String.raw`(() => { document.querySelector('canvas').style.visibility = 'hidden'; return true; })()`);
-  await sleep(400);
-  const shotOff = await send('Page.captureScreenshot', { format: 'png', clip });
-  await evalJs(String.raw`(() => { document.querySelector('canvas').style.visibility = ''; return true; })()`);
-  const hOn = createHash('sha1').update(shotOn.data).digest('hex');
-  const hOff = createHash('sha1').update(shotOff.data).digest('hex');
-  check('Mesh benar-benar tergambar (piksel di layar berubah)',
-    hOn !== hOff && shotOn.data.length >= shotOff.data.length,
-    'PNG ' + shotOn.data.length + ' B vs ' + shotOff.data.length + ' B tanpa mesh');
-
-  const tilt = await evalJs(String.raw`(async () => {
-    const fire = (x) => window.dispatchEvent(new PointerEvent('pointermove', {
-      clientX: x, clientY: 450, bubbles: true, pointerType: 'mouse' }));
-    fire(200);
-    await new Promise(r => setTimeout(r, 900));
-    fire(1240);
-    await new Promise(r => setTimeout(r, 900));
+  // Site memakai `scroll-behavior: smooth` agar tautan anchor mulus. Untuk
+  // pengukuran, scrollTo/scrollIntoView harus melompat seketika (inline style
+  // menimpa CSS), kalau tidak tiap pembacaan posisi menangkap animasi berjalan.
+  await evalJs("document.documentElement.style.scrollBehavior = 'auto'; true;");
+  // Posisi dokumen tiap section dicatat SAAT MASIH DI ATAS. `offsetTop` tidak
+  // bisa dipakai: untuk elemen `position: sticky` ia mengembalikan kotak yang
+  // sedang dipin (yaitu scrollY saat itu), bukan posisi aslinya di dokumen.
+  await evalJs(String.raw`(() => {
+    window.__docTop = {};
+    document.querySelectorAll('#top > section.stack-wrap').forEach((s) => {
+      window.__docTop[s.id || 'hero'] = Math.round(s.getBoundingClientRect().top + window.scrollY);
+    });
     return true;
   })()`);
-  check('Pointer diteruskan ke scene', tilt);
 }
 
-console.log('\n=== 6. KURSOR KUSTOM ===');
-{
-  const cur = await evalJs(String.raw`(() => ({
-    on: document.documentElement.getAttribute('data-custom-cursor'),
-    bodyCursorNone: getComputedStyle(document.body).cursor === 'none',
-    rings: [...document.querySelectorAll('.fixed.rounded-full')].length,
-  }))()`);
-  check('Atribut kursor aktif', cur.on === 'on', 'data-custom-cursor=' + cur.on);
-  check('cursor:none dipakai', cur.bodyCursorNone);
-  check('Elemen kursor ada (cincin + titik)', cur.rings >= 2, cur.rings + ' elemen');
+/* ---------------------------------------------------------- DESKTOP */
 
-  // Pada keadaan diam sudah ada 7 kartu spotlight, jadi cincin harus sudah di
-  // ukuran aktif. Kalau tidak, subscriber hover tidak pernah menerima state
-  // awal dan cincin tertahan kecil sampai terjadi perubahan berikutnya.
-  const idle = await evalJs(String.raw`(() => {
-    const ring = [...document.querySelectorAll('.fixed.rounded-full')]
-      .find(e => e.className.includes('border'));
-    return { w: Math.round(ring.getBoundingClientRect().width) };
+console.log('\n=== B1. DESKTOP 1440x900: STACKING KARTU ===');
+{
+  await setViewport(1440, 900, false);
+  await setMotion('no-preference', false);
+  await goto();
+
+  const stack = await evalJs(String.raw`(() => {
+    const secs = [...document.querySelectorAll('#top > section.stack-wrap')];
+    return secs.map((s) => {
+      const cs = getComputedStyle(s);
+      return {
+        id: s.id || '(hero)',
+        z: Number(cs.zIndex),
+        pos: cs.position,
+        top: cs.top,
+        minH: cs.minHeight,
+        radius: cs.borderTopLeftRadius,
+        shadow: cs.boxShadow !== 'none',
+        scrollMargin: cs.scrollMarginTop,
+      };
+    });
   })()`);
-  check('Cincin sudah ukuran aktif saat ada target hover', idle.w >= 30, idle.w + 'px');
+  const count = stack.length;
+  check('Delapan section dalam <main>', count === 8, count + ' section');
+  const zok = stack.map((s) => s.z).join(',') === '10,20,30,40,50,60,70,80';
+  check('z-index naik 10..80 sesuai urutan', zok, stack.map((s) => s.z).join(','));
+  const pinned = stack.every(
+    (s) => s.pos === 'sticky' && s.top === '0px' && parseFloat(s.minH) >= 800,
+  );
+  check('Semua section sticky top:0 min-height:100svh (desktop)', pinned,
+    stack.map((s) => s.pos + '/' + s.minH).join(' '));
+  check('Hanya Hero tanpa kartu; sisanya radius+shadow',
+    stack[0].radius === '0px' && !stack[0].shadow &&
+      stack.slice(1).every((s) => s.radius === '28px' && s.shadow),
+    'radius hero=' + stack[0].radius);
+  check('scroll-margin-top 88px untuk target anchor', stack.every((s) => s.scrollMargin === '88px'),
+    stack.map((s) => s.scrollMargin).join(','));
+
+  const overflow = await evalJs(String.raw`(() => ({
+    sw: document.documentElement.scrollWidth,
+    vw: document.documentElement.clientWidth,
+    sh: document.documentElement.scrollHeight,
+  }))()`);
+  check('Tidak ada scroll horizontal (1440px)', overflow.sw <= overflow.vw + 1,
+    'scrollWidth=' + overflow.sw + ' clientWidth=' + overflow.vw);
+}
+
+console.log('\n=== B2. HERO: KINETIC TYPOGRAPHY + AMBIENT ===');
+{
+  const hero = await evalJs(String.raw`(() => {
+    const h1 = document.querySelector('#top h1');
+    const lines = [...h1.querySelectorAll('.kinetic-line')];
+    const accent = lines.find((l) => l.className.includes('text-gold-gradient'));
+    return {
+      text: window.__sq(h1.textContent),
+      lines: lines.length,
+      lineY: lines.map((l) => window.__xform(l).y),
+      accentGrad: accent ? getComputedStyle(accent).backgroundImage.includes('gradient') : false,
+      ambient: !!document.querySelector('.hero-ambient'),
+      ambientAnim: getComputedStyle(document.querySelector('.hero-ambient')).animationName,
+      hint: !!document.querySelector('.hero-scroll-hint'),
+    };
+  })()`);
+  check('Headline terpecah jadi baris (bukan huruf)', hero.lines >= 2, hero.lines + ' baris');
+  check('Teks headline utuh', hero.text.includes('Asah nalar') && hero.text.includes('sains'),
+    '"' + hero.text + '"');
+  check('Baris headline berhenti di posisi akhir', hero.lineY.every((y) => Math.abs(y) < 0.5),
+    'y=' + hero.lineY.map((v) => v.toFixed(1)).join(','));
+  check('Kata "sains" bergradasi emas', hero.accentGrad);
+  check('Ambient glow CSS ada & statis (tanpa animasi)',
+    hero.ambient && (hero.ambientAnim === 'none' || hero.ambientAnim === ''),
+    'animation=' + hero.ambientAnim);
+  check('Scroll hint ada', hero.hint);
+}
+
+console.log('\n=== B3. REVEAL SAAT SCROLL (IntersectionObserver) ===');
+{
+  const reveal = await evalJs(String.raw`(async () => {
+    const step = Math.round(window.innerHeight * 0.45);
+    const maxY = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+    for (let y = 0; y < maxY + step; y += step) {
+      window.scrollTo(0, Math.min(y, maxY));
+      await new Promise(r => setTimeout(r, 100));
+    }
+    window.scrollTo(0, maxY);
+    // Tunggu tunda stagger terakhir (8 anak = 560ms) + durasi transisi 700ms.
+    await new Promise(r => setTimeout(r, 1700));
+    const groups = [...document.querySelectorAll('.reveal-group')];
+    const singles = [...document.querySelectorAll('.reveal, .reveal-x')];
+    return {
+      groups: groups.length,
+      groupsPending: groups.filter((g) => !g.classList.contains('is-in-view')).length,
+      singles: singles.length,
+      singlesPending: singles.filter((e) => !e.classList.contains('is-in-view')).length,
+      hiddenOverall: [...document.querySelectorAll('.reveal, .reveal-x, .reveal-group > *')]
+        .filter((e) => Number(getComputedStyle(e).opacity) < 0.9).length,
+    };
+  })()`);
+  check('Ada grup reveal', reveal.groups > 0, reveal.groups + ' grup');
+  check('Semua grup ter-reveal setelah scroll penuh', reveal.groupsPending === 0,
+    reveal.groupsPending + ' tertinggal');
+  check('Semua reveal single terpicu', reveal.singlesPending === 0,
+    reveal.singlesPending + '/' + reveal.singles);
+  check('Tidak ada konten reveal tertinggal opacity 0', reveal.hiddenOverall === 0,
+    reveal.hiddenOverall + ' elemen');
+}
+
+console.log('\n=== B4. GARIS PROGRES CARA IKUT ===');
+{
+  const prog = await evalJs(String.raw`(async () => {
+    const sec = document.getElementById('cara-ikut');
+    const line = sec.querySelector('.md\\:origin-left');
+    if (!line) return { found: false };
+    const top = window.__docTop['cara-ikut'];
+    const read = () => window.__xform(line).sx;
+    window.scrollTo(0, Math.max(0, top - window.innerHeight * 0.6));
+    await new Promise(r => setTimeout(r, 500));
+    const a = read();
+    window.scrollTo(0, top + window.innerHeight * 0.6);
+    await new Promise(r => setTimeout(r, 600));
+    const b = read();
+    return { found: true, a, b, grew: b > a + 0.08 };
+  })()`);
+  check('Garis progres ditemukan', prog.found);
+  check('Garis tumbuh mengikuti scroll', !!prog.grew,
+    'scaleX ' + (prog.a ?? 0).toFixed(2) + ' -> ' + (prog.b ?? 0).toFixed(2));
+}
+
+console.log('\n=== B5. PARALLAX DNA (KENAPA HELIXA, >=1024px) ===');
+{
+  const par = await evalJs(String.raw`(async () => {
+    const el = document.querySelector('#tentang [data-parallax]');
+    if (!el) return { found: false };
+    const read = () => window.__xform(el).y;
+    const top = window.__docTop['tentang'];
+    window.scrollTo(0, Math.max(0, top - window.innerHeight));
+    await new Promise(r => setTimeout(r, 500));
+    const a = read();
+    window.scrollTo(0, top + window.innerHeight);
+    await new Promise(r => setTimeout(r, 600));
+    const b = read();
+    return { found: true, a, b, moved: Math.abs(b - a) > 5 };
+  })()`);
+  check('Ornamen DNA ditemukan', par.found);
+  check('Parallax menggeser DNA saat scroll', !!par.moved,
+    'y ' + (par.a ?? 0).toFixed(1) + ' -> ' + (par.b ?? 0).toFixed(1));
+}
+
+console.log('\n=== B6. FAQ AKORDEON (CSS grid-rows) ===');
+{
+  const faq = await evalJs(String.raw`(async () => {
+    const sec = document.getElementById('faq');
+    // Gulir sampai section benar-benar ter-pin (top:0), lalu biarkan transisi
+    // reveal selesai — di sinilah klik harus tetap mendarat pada tombolnya.
+    window.scrollTo(0, window.__docTop['faq'] + 200);
+    await new Promise(r => setTimeout(r, 1200));
+    const pinnedTop = Math.round(sec.getBoundingClientRect().top);
+    const items = [...sec.querySelectorAll('.faq-item')];
+    const btn = (i) => items[i].querySelector('button');
+    const panel = (i) => items[i].querySelector('.faq-panel');
+    const h = (i) => Math.round(panel(i).getBoundingClientRect().height);
+
+    const int0 = { open: h(0), inert1: panel(1).hasAttribute('inert'), items: items.length };
+    btn(1).click();
+    await new Promise(r => setTimeout(r, 800));
+    const afterOpen = {
+      openIdx: items.findIndex((it) => it.classList.contains('is-open')),
+      h1: h(1), h0: h(0),
+      inert0: panel(0).hasAttribute('inert'),
+      exp: btn(1).getAttribute('aria-expanded'),
+    };
+    btn(1).click();
+    await new Promise(r => setTimeout(r, 800));
+    const closed = {
+      openIdx: items.findIndex((it) => it.classList.contains('is-open')),
+      h1: h(1), inert1: panel(1).hasAttribute('inert'),
+    };
+    const clickable = (() => {
+      const b = btn(0).getBoundingClientRect();
+      const at = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      return !!(at && (at === btn(0) || btn(0).contains(at)));
+    })();
+    return { pinnedTop, int0, afterOpen, closed, clickable };
+  })()`);
+  check('Item FAQ muncul', faq.int0.items >= 5, faq.int0.items + ' item');
+  check('Section FAQ benar-benar ter-pin saat diuji', faq.pinnedTop === 0,
+    'top=' + faq.pinnedTop + 'px');
+  check('Panel pertama terbuka awal', faq.int0.open > 15, 'h=' + faq.int0.open);
+  check('Panel tertutup punya inert', faq.int0.inert1 === true);
+  check('Klik membuka item kedua & menutup item pertama', faq.afterOpen.openIdx === 1,
+    'h1=' + faq.afterOpen.h1);
+  check('aria-expanded benar', faq.afterOpen.exp === 'true');
+  check('Panel pertama ikut inert saat tertutup', faq.afterOpen.inert0 === true);
+  check('Klik kedua menutup kembali', faq.closed.openIdx === -1 && faq.closed.h1 < 5,
+    'h1=' + faq.closed.h1);
+  check('Tombol FAQ bisa diklik saat section sticky', faq.clickable);
+}
+
+console.log('\n=== B7. NAVBAR: TRANSPARAN -> SOLID+BLUR ===');
+{
+  const nb = await evalJs(String.raw`(async () => {
+    // B7 memakai halaman yang sama dengan bagian sebelumnya; kembalikan ke
+    // posisi atas dulu supaya state navbar terukur dari kondisi segar. Tunggu
+    // transisi background navbar (0.5s) benar-benar selesai.
+    window.scrollTo(0, 0);
+    await new Promise(r => setTimeout(r, 1100));
+    const h = document.querySelector('header');
+    const top = {
+      y: window.scrollY,
+      bg: getComputedStyle(h).backgroundColor,
+      blur: getComputedStyle(h).backdropFilter,
+    };
+    window.scrollTo(0, 600);
+    await new Promise(r => setTimeout(r, 700));
+    const gone = {
+      y: window.scrollY,
+      bg: getComputedStyle(h).backgroundColor,
+      blur: getComputedStyle(h).backdropFilter,
+      border: getComputedStyle(h).borderBottomColor,
+    };
+    return { top, gone };
+  })()`);
+  check('Halaman segar di posisi atas', nb.top.y < 5);
+  check('Navbar transparan di atas', alphaOf(nb.top.bg) < 0.05, nb.top.bg);
+  check('Scroll berjalan', nb.gone.y > 300, 'scrollY=' + nb.gone.y);
+  check('Navbar blur setelah scroll', nb.gone.blur.includes('blur'), nb.gone.blur);
+  check('Navbar solid setelah scroll', alphaOf(nb.gone.bg) > 0.5, nb.gone.bg);
+  check('Border emas setelah scroll', alphaOf(nb.gone.border) > 0.05, nb.gone.border);
+}
+
+console.log('\n=== B8. KURSOR KUSTOM (>=1024px + pointer fine) ===');
+{
+  const on = await evalJs(String.raw`(() => ({
+    attr: document.documentElement.getAttribute('data-custom-cursor'),
+    bodyCursor: getComputedStyle(document.body).cursor,
+  }))()`);
+  check('Atribut kursor aktif', on.attr === 'on', 'data-custom-cursor=' + on.attr);
+  check('cursor:none diterapkan', on.bodyCursor === 'none', on.bodyCursor);
 
   const move = await evalJs(String.raw`(async () => {
-    const ring = [...document.querySelectorAll('.fixed.rounded-full')]
-      .find(e => e.className.includes('border'));
+    const ring = [...document.querySelectorAll('.cursor-ring')].find(Boolean);
+    const dot = [...document.querySelectorAll('.cursor-dot')].find(Boolean);
     const fire = (x, y) => window.dispatchEvent(new PointerEvent('pointermove', {
       clientX: x, clientY: y, bubbles: true, pointerType: 'mouse' }));
     fire(700, 400);
-    await new Promise(r => setTimeout(r, 700));
+    await new Promise(r => setTimeout(r, 800));
     const a = window.__xform(ring);
     fire(300, 250);
     await new Promise(r => setTimeout(r, 900));
     const b = window.__xform(ring);
-    return { a, b, moved: Math.abs(a.x - b.x) > 100 && Math.abs(a.y - b.y) > 100 };
-  })()`);
-  check('Cincin kursor mengikuti pointer', !!move.moved,
-    move.a
-      ? '(' + move.a.x.toFixed(0) + ',' + move.a.y.toFixed(0) + ') -> ('
-        + move.b.x.toFixed(0) + ',' + move.b.y.toFixed(0) + ')'
-      : 'n/a');
-
-  const dot = await evalJs(String.raw`(async () => {
-    const d = [...document.querySelectorAll('.fixed.rounded-full')]
-      .find(e => e.className.includes('bg-'));
-    window.dispatchEvent(new PointerEvent('pointermove', {
-      clientX: 200, clientY: 200, bubbles: true, pointerType: 'mouse' }));
-    await new Promise(r => setTimeout(r, 500));
-    return { opacity: Number(getComputedStyle(d).opacity) };
-  })()`);
-  check('Titik kursor terlihat saat pointer bergerak', dot.opacity > 0.8,
-    'opacity=' + dot.opacity);
-
-  // Inti perilaku: titik melekat TEPAT di posisi pointer (tanpa lerp),
-  // cincin mengejar di belakangnya. Kalau titik ikut dilerp, ia tertinggal
-  // dari kursor asli; kalau ia diberi lerp lebih cepat dari cincin, ia
-  // menyembul keluar. Keduanya sama-sama salah — titik harus menempel.
-  const precision = await evalJs(String.raw`(async () => {
-    const pick = (test) => [...document.querySelectorAll('.fixed.rounded-full')]
-      .find(e => test(e.className));
-    const ring = pick(c => c.includes('border'));
-    const dotEl = pick(c => c.includes('bg-'));
-    const fire = (x, y) => window.dispatchEvent(new PointerEvent('pointermove', {
-      clientX: x, clientY: y, bubbles: true, pointerType: 'mouse' }));
-    fire(640, 430);
-    await new Promise(r => setTimeout(r, 700));
-    const seatedDot = window.__xform(dotEl);
-    const seatedRing = window.__xform(ring);
-    fire(120, 310); // lompatan jauh: dot harus pindah seketika, ring belum
-    await new Promise(r => setTimeout(r, 20));
-    const nowDot = window.__xform(dotEl);
-    const nowRing = window.__xform(ring);
-    const near = (p, x, y) => Math.abs(p.x - x) < 0.5 && Math.abs(p.y - y) < 0.5;
-    return {
-      dotSeated: near(seatedDot, 640, 430),
-      ringSeated: near(seatedRing, 640, 430),
-      dotAtPointer: near(nowDot, 120, 310),
-      ringLagging: Math.abs(nowRing.x - 120) > 5 || Math.abs(nowRing.y - 310) > 5,
-      dotNow: { x: Math.round(nowDot.x), y: Math.round(nowDot.y) },
-    };
-  })()`);
-  check('Titik diam tepat di posisi pointer', !!precision.dotSeated,
-    'dot=(' + precision.dotNow.x + ',' + precision.dotNow.y + ')');
-  check('Titik memindahkan diri seketika saat kursor lompat', !!precision.dotAtPointer,
-    'dot=(' + precision.dotNow.x + ',' + precision.dotNow.y + ')');
-  check('Cincin tertinggal mengejar di belakang titik', !!precision.ringLagging);
-
-  // Cincin harus selalu berpusat di titik anchor (pointer) berapa pun
-  // ukurannya. Dulu margin negatif dikunci di -sizeIdle/2, jadi cincin aktif
-  // 44px pusatnya bergeser (44-14)/2 = 15px ke kanan-bawah -> dot tampak
-  // tidak di tengah. Cek: pusat kotak cincin (rect) harus sama dengan posisi
-  // transform-nya (anchor).
-  const centered = await evalJs(String.raw`(async () => {
-    const ring = [...document.querySelectorAll('.fixed.rounded-full')]
-      .find(e => e.className.includes('border'));
-    window.dispatchEvent(new PointerEvent('pointermove', {
-      clientX: 700, clientY: 430, bubbles: true, pointerType: 'mouse' }));
-    await new Promise(r => setTimeout(r, 700));
+    const d = window.__xform(dot);
     const r = ring.getBoundingClientRect();
-    const t = window.__xform(ring);
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    return {
-      w: Math.round(r.width),
-      offsetX: cx - t.x, offsetY: cy - t.y,
-      centered: Math.abs(cx - t.x) < 1 && Math.abs(cy - t.y) < 1,
-    };
+    const centered = Math.abs((r.left + r.width / 2) - b.x) < 2 && Math.abs((r.top + r.height / 2) - b.y) < 2;
+    return { ring: { a, b }, dot: d, moved: Math.abs(a.x - b.x) > 80 && Math.abs(a.y - b.y) > 80,
+      dotAt: Math.abs(d.x - 300) < 0.5 && Math.abs(d.y - 250) < 0.5, centered };
   })()`);
-  check('Cincin tetap berpusat di pointer saat membesar', centered.centered,
-    'w=' + centered.w + ' offset=(' + centered.offsetX.toFixed(1) + ','
-    + centered.offsetY.toFixed(1) + ')');
+  check('Cincin mengikuti pointer', !!move.moved,
+    '(' + move.ring.a.x.toFixed(0) + ',' + move.ring.a.y.toFixed(0) + ') -> ('
+      + move.ring.b.x.toFixed(0) + ',' + move.ring.b.y.toFixed(0) + ')');
+  check('Titik menempel tepat di pointer', !!move.dotAt,
+    'dot=(' + move.dot.x.toFixed(0) + ',' + move.dot.y.toFixed(0) + ')');
+  check('Cincin berpusat di pointer', !!move.centered);
 }
 
-console.log('\n=== 7. MAGNETIC PULL ===');
+console.log('\n=== B9. MAGNET & SPOTLIGHT (hanya hover:fine) ===');
 {
   const mag = await evalJs(String.raw`(async () => {
     const el = document.querySelector('.magnetic');
     if (!el) return { found: false };
     el.scrollIntoView({ block: 'center' });
-    await new Promise(r => setTimeout(r, 900));
+    await new Promise(r => setTimeout(r, 800));
     const r = el.getBoundingClientRect();
-    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     const fire = (x, y) => window.dispatchEvent(new PointerEvent('pointermove', {
       clientX: x, clientY: y, bubbles: true, pointerType: 'mouse' }));
-    fire(cx - 400, cy - 300);
-    await new Promise(r2 => setTimeout(r2, 900));
-    const before = window.__xform(el);
-    fire(cx + 30, cy);
-    await new Promise(r2 => setTimeout(r2, 900));
-    const after = window.__xform(el);
-    return { found: true, before, after,
-      moved: Math.abs(after.x - before.x) > 1.5 || Math.abs(after.y - before.y) > 1.5 };
+    const cx = r.left + r.width / 2;
+    const cy = r.top + r.height / 2;
+    // Jauh ~6px dari pusat host: masih dalam-radius magnet (radius = setengah
+    // ukuran + 30px), sehingga tarikan benar-benar terjadi.
+    fire(cx + 6, cy);
+    await new Promise(r2 => setTimeout(r2, 500));
+    const near = window.__xform(el);
+    fire(cx - 300, cy - 300);
+    await new Promise(r2 => setTimeout(r2, 500));
+    const away = window.__xform(el);
+    return { found: true, near, away,
+      moved: Math.abs(near.x) + Math.abs(near.y) > 0.5,
+      reset: Math.abs(away.x) < 1 && Math.abs(away.y) < 1 };
   })()`);
-  check('Elemen magnet ditemukan', mag.found);
-  check('Magnet bergerak ke arah kursor', !!mag.moved,
-    mag.before
-      ? '(' + mag.before.x.toFixed(1) + ',' + mag.before.y.toFixed(1) + ') -> ('
-        + mag.after.x.toFixed(1) + ',' + mag.after.y.toFixed(1) + ')'
-      : 'n/a');
+  check('Host magnet ditemukan', mag.found);
+  check('Tombol tertarik saat pointer dekat', !!mag.moved, '(' + (mag.near?.x ?? 0).toFixed(1) + ',' + (mag.near?.y ?? 0).toFixed(1) + ')');
+  check('Kembali diam saat pointer menjauh', !!mag.reset);
 
-  const away = await evalJs(String.raw`(async () => {
-    const el = document.querySelector('.magnetic');
-    const r = el.getBoundingClientRect();
-    window.dispatchEvent(new PointerEvent('pointermove', {
-      clientX: r.left - 600, clientY: r.top - 600, bubbles: true, pointerType: 'mouse' }));
-    await new Promise(r2 => setTimeout(r2, 900));
-    return window.__xform(el);
-  })()`);
-  check('Magnet kembali ke tempat saat kursor menjauh',
-    Math.abs(away.x) < 1 && Math.abs(away.y) < 1,
-    '(' + away.x.toFixed(2) + ', ' + away.y.toFixed(2) + ')');
-}
-
-console.log('\n=== 8. SPOTLIGHT KARTU ===');
-{
   const sp = await evalJs(String.raw`(async () => {
     const card = document.querySelector('[data-spotlight-card]');
     if (!card) return { found: false };
     card.scrollIntoView({ block: 'center' });
-    await new Promise(r => setTimeout(r, 600));
-    const beforeX = card.style.getPropertyValue('--mx');
-    const beforeY = card.style.getPropertyValue('--my');
+    await new Promise(r => setTimeout(r, 700));
+    const before = card.style.getPropertyValue('--mx');
     const r = card.getBoundingClientRect();
     card.dispatchEvent(new PointerEvent('pointermove', {
       clientX: r.left + r.width * 0.8, clientY: r.top + 30,
       bubbles: true, pointerType: 'mouse' }));
     await new Promise(r2 => setTimeout(r2, 250));
-    return { found: true, beforeX, beforeY,
-             afterX: card.style.getPropertyValue('--mx'),
-             afterY: card.style.getPropertyValue('--my') };
+    const after = card.style.getPropertyValue('--mx');
+    const glow = getComputedStyle(card, '::before').backgroundImage;
+    return { found: true, before, after, changed: after !== before && after.endsWith('px'),
+      glowOk: glow.includes('radial') };
   })()`);
   check('Kartu spotlight ditemukan', sp.found);
-  check('--mx diperbarui saat pointer bergerak', !!sp.afterX && sp.afterX !== sp.beforeX,
-    '"' + sp.beforeX + '" -> "' + sp.afterX + '"');
-  check('--my diperbarui', !!sp.afterY && sp.afterY !== sp.beforeY,
-    '"' + sp.beforeY + '" -> "' + sp.afterY + '"');
-
-  const glow = await evalJs(String.raw`(() => {
-    const card = document.querySelector('[data-spotlight-card]');
-    return { bg: getComputedStyle(card, '::before').backgroundImage.slice(0, 34) };
-  })()`);
-  check('Gradient spotlight terpasang di ::before', glow.bg.includes('radial'), glow.bg + '...');
+  check('--mx diperbarui mengikuti pointer', !!sp.changed, '"' + sp.before + '" -> "' + sp.after + '"');
+  check('Gradient spotlight terpasang', !!sp.glowOk);
 }
 
-console.log('\n=== 9. GARIS PROGRES CARA IKUT ===');
+console.log('\n=== B10. MENU & HALAMAN: TIDAK ADA SCROLL HORIZONTAL ===');
 {
-  const prog = await evalJs(String.raw`(async () => {
-    const sec = document.querySelector('#cara-ikut');
-    const line = sec.querySelector('.origin-left, .origin-top');
-    if (!line) return { found: false };
-    window.scrollTo(0, sec.offsetTop - window.innerHeight);
-    await new Promise(r => setTimeout(r, 1300));
-    const a = window.__xform(line).sx;
-    window.scrollTo(0, sec.offsetTop + sec.offsetHeight - 200);
-    await new Promise(r => setTimeout(r, 1700));
-    const b = window.__xform(line).sx;
-    return { found: true, a, b, grew: b > a + 0.05 };
-  })()`);
-  check('Garis progres ditemukan', prog.found);
-  check('Garis tumbuh mengikuti scroll', !!prog.grew,
-    'skalaX ' + (prog.a ?? 0).toFixed(2) + ' -> ' + (prog.b ?? 0).toFixed(2));
-}
-
-console.log('\n=== 10. PARALLAX ORNAMEN ===');
-{
-  const par = await evalJs(String.raw`(async () => {
-    const el = document.querySelector('#tentang .pointer-events-none');
-    if (!el) return { found: false };
-    window.scrollTo(0, 0);
-    await new Promise(r => setTimeout(r, 1000));
-    const a = window.__xform(el).y;
-    const step = Math.round(window.innerHeight * 0.4);
-    let peak = a;
-    for (let y = 0; y < document.body.scrollHeight; y += step) {
-      window.scrollTo(0, y);
-      await new Promise(r => setTimeout(r, 180));
-      peak = Math.max(peak, window.__xform(el).y);
-    }
-    return { found: true, a, peak, changed: Math.abs(peak - a) > 5 };
-  })()`);
-  check('Ornamen DNA ada', par.found);
-  check('Parallax menggeser ornamen', !!par.changed,
-    'y ' + par.a.toFixed(1) + 'px -> puncak ' + par.peak.toFixed(1) + 'px');
-}
-
-console.log('\n=== 11. NAVBAR GLASSMORPHISM ===');
-{
-  // Diukur dari halaman SEGAR. State Lenis dari bagian sebelumnya tidak bisa
-  // dibersihkan lewat `scrollTo` native: Lenis menelan event scroll native
-  // pertama setelah menggulir mulusnya sendiri, jadi boleh jadi tidak ada
-  // event scroll yang sampai ke navbar ketika halaman melompat ke atas --
-  // navbar tertahan gelap meski scrollY = 0. Pengunjung tidak pernah
-  // mengalami itu (kembali ke atas lewat Lenis/anchor selalu memproduksi
-  // event), jadi test memakai dua pengamatan yang deterministik: kondisi
-  // awal halaman yang baru dibuka, dan gulir ke bawah ala manusia.
-  await goto();
-  await sleep(1200);
-  const atTop = await evalJs(String.raw`(() => {
-    const h = document.querySelector('header');
-    return { y: window.scrollY,
-             bg: getComputedStyle(h).backgroundColor,
-             blur: getComputedStyle(h).backdropFilter };
-  })()`);
-
-  // WheelEvent asli di window: Lenis mendengarnya, menggulir mulus, dan tiap
-  // frame gulirnya memproduksi event scroll untuk navbar.
-  const afterScroll = await evalJs(String.raw`(async () => {
-    const h = document.querySelector('header');
-    const wheel = (dy) => window.dispatchEvent(new WheelEvent('wheel', {
-      deltaY: dy, deltaMode: 0, bubbles: true, cancelable: true,
-    }));
-    for (let i = 0; i < 6; i++) {
-      wheel(400);
-      await new Promise(r => setTimeout(r, 260));
-    }
-    await new Promise(r => setTimeout(r, 1400));
-    return { y: window.scrollY,
-             bg: getComputedStyle(h).backgroundColor,
-             blur: getComputedStyle(h).backdropFilter,
-             border: getComputedStyle(h).borderBottomColor };
-  })()`);
-
-  check('Halaman segar dimulai di posisi atas', atTop.y < 5, 'scrollY=' + atTop.y);
-  check('Navbar transparan di atas', alphaOf(atTop.bg) < 0.05,
-    atTop.bg + ' alpha=' + alphaOf(atTop.bg));
-  check('Halaman benar-benar turun setelah gulir', afterScroll.y > 300, 'scrollY=' + afterScroll.y);
-  check('Navbar glass setelah scroll', afterScroll.blur.includes('blur'), afterScroll.blur);
-  check('Latar jadi gelap setelah scroll', alphaOf(afterScroll.bg) > 0.5, afterScroll.bg);
-  check('Border emas muncul setelah scroll', afterScroll.border !== 'rgba(0, 0, 0, 0)',
-    afterScroll.border);
-}
-
-/* ==================================================================
-   BAGIAN 2 - mobile, pointer kasar
-   ================================================================== */
-
-console.log('\n=== 12. MOBILE: KURSOR & WEBGL MATI ===');
-{
-  await send('Emulation.setDeviceMetricsOverride', {
-    width: 390, height: 844, deviceScaleFactor: 2, mobile: true,
-    screenWidth: 390, screenHeight: 844,
-  });
-  await setMotion('no-preference', 'coarse');
-  await goto();
-
-  const envCheck = await evalJs(String.raw`(() => ({
-    fine: matchMedia('(pointer: fine)').matches,
-    coarse: matchMedia('(pointer: coarse)').matches,
-    hover: matchMedia('(hover: hover)').matches,
+  const o = await evalJs(String.raw`(() => ({
+    sw: document.documentElement.scrollWidth,
+    vw: document.documentElement.clientWidth,
+    hamburger: (() => {
+      const b = document.querySelector('button[aria-controls="menu-mobile"]');
+      return b ? getComputedStyle(b).display : 'none';
+    })(),
   }))()`);
-  check('Emulasi pointer sentuh aktif (pointer: coarse)',
-    envCheck.coarse && !envCheck.fine,
-    'coarse=' + envCheck.coarse + ' fine=' + envCheck.fine + ' hover=' + envCheck.hover);
+  check('Tidak ada scroll horizontal (1440px)', o.sw <= o.vw + 1, o.sw + ' <= ' + o.vw);
+  check('Hamburger tersembunyi di desktop', o.hamburger === 'none', 'display=' + o.hamburger);
+}
+
+/* ---------------------------------------------------------- MOBILE */
+
+console.log('\n=== B11. MOBILE 390x844: PIN DILEPAS, KURSOR/MAGNET MATI ===');
+{
+  await setViewport(390, 844, true);
+  await setMotion('no-preference', true);
+  await goto();
+
+  const env = await evalJs(String.raw`(() => {
+    const secs = [...document.querySelectorAll('#top > section.stack-wrap')];
+    return {
+      fine: matchMedia('(pointer: fine)').matches,
+      coarse: matchMedia('(pointer: coarse)').matches,
+      pos: secs.map((s) => getComputedStyle(s).position),
+      mt: secs.map((s) => getComputedStyle(s).marginTop),
+      zs: secs.map((s) => getComputedStyle(s).zIndex),
+    };
+  })()`);
+  check('Emulasi pointer sentuh aktif', env.coarse && !env.fine,
+    'coarse=' + env.coarse + ' fine=' + env.fine);
+  check('Section tidak lagi position:sticky (flow normal)', env.pos.every((p) => p === 'relative'),
+    env.pos.join(','));
+  check('Overlap ringan -28px antar kartu', env.mt.slice(1).every((m) => m === '-28px'),
+    env.mt.join(','));
+  check('z-index bertingkat tetap dipertahankan', env.zs.join(',') === '10,20,30,40,50,60,70,80',
+    env.zs.join(','));
 
   const mob = await evalJs(String.raw`(() => {
-    const c = document.querySelector('canvas');
+    const m = document.querySelector('.magnetic');
+    const t = m ? window.__xform(m) : { x: 1, y: 1 };
     return {
       cursorAttr: document.documentElement.getAttribute('data-custom-cursor'),
       bodyCursor: getComputedStyle(document.body).cursor,
-      ambient: !!document.querySelector('.hero-ambient'),
-      magneticMoved: [...document.querySelectorAll('.magnetic')].some(e => e.style.transform !== ''),
-      canvasOpacity: c ? Number(getComputedStyle(c).opacity) : -1,
+      magnetMoved: t.x * t.x + t.y * t.y > 0.01,
     };
   })()`);
-  check('Kursor kustom NONAKTIF di layar sentuh', mob.cursorAttr === null, 'attr=' + mob.cursorAttr);
-  check('Pointer asli dipertahankan', mob.bodyCursor !== 'none', 'cursor=' + mob.bodyCursor);
-  check('Ambient glow CSS aktif sebagai pengganti WebGL', mob.ambient);
-  check('Tidak ada transform magnet di layar sentuh', !mob.magneticMoved);
-  check('Canvas WebGL tidak pernah fade-in di mobile', mob.canvasOpacity < 0.5,
-    'opacity=' + mob.canvasOpacity);
+  check('Kursor kustom NONAKTIF', mob.cursorAttr === null);
+  check('Pointer asli dipertahankan', mob.bodyCursor !== 'none', mob.bodyCursor);
+  check('Magnet tidak bergerak di layar sentuh', !mob.magnetMoved);
 
   const menu = await evalJs(String.raw`(async () => {
     const btn = document.querySelector('button[aria-controls="menu-mobile"]');
     if (!btn) return { found: false };
-    const r = btn.getBoundingClientRect();
+    const br = btn.getBoundingClientRect();
     btn.click();
-    await new Promise(r2 => setTimeout(r2, 700));
+    await new Promise(r => setTimeout(r, 500));
     const panel = document.querySelector('#menu-mobile');
     const link = panel && panel.querySelector('ul a');
-    const pr = link && link.getBoundingClientRect();
-    return { found: true, expanded: btn.getAttribute('aria-expanded'), panelOpen: !!panel,
-      role: panel && panel.getAttribute('role'), modal: panel && panel.getAttribute('aria-modal'),
-      tapW: Math.round(r.width), tapH: Math.round(r.height),
-      linkH: pr ? Math.round(pr.height) : 0,
-      lenisStopped: document.documentElement.classList.contains('lenis-stopped'),
+    const lr = link && link.getBoundingClientRect();
+    const st = { found: true, expanded: btn.getAttribute('aria-expanded'),
+      panelOpen: !!panel, role: panel && panel.getAttribute('role'),
+      modal: panel && panel.getAttribute('aria-modal'),
+      tapW: Math.round(br.width), tapH: Math.round(br.height),
+      linkH: lr ? Math.round(lr.height) : 0,
       bodyOverflow: document.body.style.overflow };
-  })()`);
-  check('Tombol hamburger ada', menu.found);
-  check('Target sentuh >= 44x44', menu.tapW >= 44 && menu.tapH >= 44, menu.tapW + 'x' + menu.tapH);
-  check('Panel terbuka sebagai dialog modal',
-    menu.panelOpen && menu.role === 'dialog' && menu.modal === 'true');
-  check('aria-expanded=true', menu.expanded === 'true');
-  check('Semua link menu >= 44px', menu.linkH >= 44, menu.linkH + 'px');
-  check('Lenis DIHENTIKAN saat menu terbuka', menu.lenisStopped);
-  check('Body overflow terkunci', menu.bodyOverflow === 'hidden', menu.bodyOverflow);
-
-  const esc = await evalJs(String.raw`(async () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-    await new Promise(r => setTimeout(r, 500));
-    return { closed: !document.querySelector('#menu-mobile'),
-      lenisRunning: !document.documentElement.classList.contains('lenis-stopped'),
-      overflow: document.body.style.overflow };
+    await new Promise(r2 => setTimeout(r2, 500));
+    return { ...st, closed: !document.querySelector('#menu-mobile'),
+      overflowAfter: document.body.style.overflow };
   })()`);
-  check('Esc menutup menu', esc.closed);
-  check('Lenis jalan lagi setelah ditutup', esc.lenisRunning && esc.overflow !== 'hidden');
+  check('Tombol hamburger ada & >=44px', menu.found && menu.tapW >= 44 && menu.tapH >= 44,
+    (menu.tapW ?? 0) + 'x' + (menu.tapH ?? 0));
+  check('Panel terbuka sebagai dialog modal', menu.panelOpen && menu.role === 'dialog' && menu.modal === 'true');
+  check('aria-expanded=true', menu.expanded === 'true');
+  check('Link menu >= 44px', menu.linkH >= 44, (menu.linkH ?? 0) + 'px');
+  check('Body overflow terkunci saat menu terbuka', menu.bodyOverflow === 'hidden',
+    menu.bodyOverflow);
+  check('Esc menutup menu & membuka body', menu.closed === true && menu.overflowAfter !== 'hidden',
+    'overflow=' + menu.overflowAfter);
+
+  const o = await evalJs(String.raw`(() => ({
+    sw: document.documentElement.scrollWidth,
+    vw: document.documentElement.clientWidth,
+  }))()`);
+  check('Tidak ada scroll horizontal (390px)', o.sw <= o.vw + 1, o.sw + ' <= ' + o.vw);
 }
 
-/* ==================================================================
-   BAGIAN 3 - prefers-reduced-motion
-   ================================================================== */
+/* -------------------------------------------------- REDUCED MOTION */
 
-console.log('\n=== 13. REDUCED MOTION ===');
+console.log('\n=== B12. REDUCED MOTION: SEMUA MATI TOTAL ===');
 {
-  await send('Emulation.setDeviceMetricsOverride', {
-    width: 1440, height: 900, deviceScaleFactor: 1, mobile: false,
-    screenWidth: 1440, screenHeight: 900,
-  });
-  await setMotion('reduce', 'fine');
+  await setViewport(1440, 900, false);
+  await setMotion('reduce', false);
   await goto();
 
   const rm = await evalJs(String.raw`(() => {
-    const h1 = document.querySelector('h1');
-    const steps = [...document.querySelectorAll('[data-step]')];
-    const cards = [...document.querySelectorAll('[data-spotlight-card]')];
-    const panels = [...document.querySelectorAll('[role="region"][id^="faq-panel"]')];
-    const open = panels.find(p => p.getBoundingClientRect().height > 20);
-    const accents = [...document.querySelectorAll('.text-gold-gradient, .bg-gold-gradient')];
+    const secs = [...document.querySelectorAll('#top > section.stack-wrap')];
+    const h1 = document.querySelector('#top h1');
+    const grad = document.querySelector('.text-gold-gradient');
+    const parallaxEls = [...document.querySelectorAll('[data-parallax]')];
     return {
-      lenis: document.documentElement.classList.contains('lenis'),
-      cursorAttr: document.documentElement.getAttribute('data-custom-cursor'),
-      bodyCursor: getComputedStyle(document.body).cursor,
-      h1Opacity: getComputedStyle(h1).opacity,
+      pos: secs.map((s) => getComputedStyle(s).position),
+      radius: secs.map((s) => getComputedStyle(s).borderTopLeftRadius),
+      shadow: secs.map((s) => getComputedStyle(s).boxShadow !== 'none'),
+      mt: secs.map((s) => getComputedStyle(s).marginTop),
+      h1Opacity: Number(getComputedStyle(h1).opacity),
       h1Text: window.__sq(h1.textContent),
-      h1Children: h1.querySelectorAll('div').length,
-      hiddenSteps: steps.filter(e => Number(getComputedStyle(e).opacity) < 0.9).length,
-      stepTotal: steps.length,
-      hiddenCards: cards.filter(e => Number(getComputedStyle(e).opacity) < 0.9).length,
-      cardTotal: cards.length,
-      faqHasOpen: !!open,
-      faqText: open ? open.textContent.trim().slice(0, 34) : '',
+      gradDur: grad ? getComputedStyle(grad).transitionDuration : '',
+      cursorAttr: document.documentElement.getAttribute('data-custom-cursor'),
+      parallaxTransforms: parallaxEls.map((el) => getComputedStyle(el).transform),
       scrollBehavior: getComputedStyle(document.documentElement).scrollBehavior,
       scrollable: document.body.scrollHeight > window.innerHeight,
-      ambientAnim: getComputedStyle(document.querySelector('.hero-ambient')).animationName,
-      accentTransitions: accents.map(a => getComputedStyle(a).transitionDuration),
-      accentCount: accents.length,
     };
   })()`);
-  check('Lenis NONAKTIF', !rm.lenis);
-  check('Kursor kustom NONAKTIF', rm.cursorAttr === null);
-  check('Pointer asli dipertahankan', rm.bodyCursor !== 'none', 'cursor=' + rm.bodyCursor);
-  check('Scroll behavior normal', rm.scrollBehavior === 'auto', rm.scrollBehavior);
+  check('Semua section relative (pin dilepas)', rm.pos.every((p) => p === 'relative'), rm.pos.join(','));
+  check('Kartu tanpa radius & bayangan', rm.radius.every((r) => r === '0px') && rm.shadow.every((s) => !s));
+  check('Overlap dinolkan', rm.mt.every((m) => m === '0px'), rm.mt.join(','));
+  check('Headline langsung terbaca', rm.h1Opacity > 0.9, 'opacity=' + rm.h1Opacity);
+  check('Teks headline utuh', rm.h1Text.includes('Asah nalar') && rm.h1Text.includes('sains'),
+    '"' + rm.h1Text + '"');
+  check('Scroll native (bukan smooth)', rm.scrollBehavior === 'auto', rm.scrollBehavior);
   check('Halaman tetap bisa di-scroll', rm.scrollable);
-  check('Headline langsung terlihat', Number(rm.h1Opacity) > 0.9, 'opacity=' + rm.h1Opacity);
-  check('Teks utuh tanpa SplitText',
-    rm.h1Text.includes('Asah nalar') && rm.h1Text.includes('sains'), '"' + rm.h1Text + '"');
-  check('SplitText tidak dijalankan', rm.h1Children === 0, rm.h1Children + ' div hasil split');
-  check('Semua langkah terlihat', rm.hiddenSteps === 0,
-    rm.hiddenSteps + '/' + rm.stepTotal + ' tersembunyi');
-  check('Semua kartu terlihat', rm.hiddenCards === 0, rm.hiddenCards + '/' + rm.cardTotal);
-  check('Ada jawaban FAQ terbuka & terbaca', rm.faqHasOpen, '"' + rm.faqText + '"');
-  check('Ambient glow tidak beranimasi', rm.ambientAnim === 'none',
-    'animation=' + rm.ambientAnim);
+  check('Kursor kustom NONAKTIF', rm.cursorAttr === null);
+  check('Parallax ditangguhkan', rm.parallaxTransforms.every((x) => x === 'none' || x === ''),
+    rm.parallaxTransforms.join('; '));
+  const maxDur = rm.gradDur.split(',').map((s) => parseFloat(s)).reduce((a, b) => Math.max(a, b), 0);
+  check('Gradasi emas tanpa transisi', isNaN(maxDur) || maxDur <= 0.05, rm.gradDur);
 
-  const stillMoving = rm.accentTransitions.filter((v) => durSec(v) > 0.05);
-  check('Gradasi emas tidak bertransisi', stillMoving.length === 0,
-    stillMoving.length + '/' + rm.accentCount + ' masih punya transisi, contoh: '
-      + (rm.accentTransitions[0] ?? 'n/a'));
+  const o = await evalJs(String.raw`(() => ({
+    sw: document.documentElement.scrollWidth,
+    vw: document.documentElement.clientWidth,
+  }))()`);
+  check('Tidak ada scroll horizontal (reduced)', o.sw <= o.vw + 1, o.sw + ' <= ' + o.vw);
 }
 
-console.log('\n=== 14. KONSOL BERSIH ===');
+/* ------------------------------------------------- LEBAR 320..1440 */
+
+console.log('\n=== B13. SWEEP LEBAR: 320/375/768/1024/1440 ===');
 {
-  check('Tidak ada exception / console.error di halaman', pageProblems.length === 0,
-    pageProblems.length + ' masalah');
-  if (pageProblems.length) pageProblems.forEach((p) => console.log('       ' + p));
+  const widths = [
+    { w: 320, h: 720, mobile: true },
+    { w: 375, h: 812, mobile: true },
+    { w: 768, h: 1024, mobile: false },
+    { w: 1024, h: 768, mobile: false },
+    { w: 1440, h: 900, mobile: false },
+  ];
+  for (const vp of widths) {
+    await setViewport(vp.w, vp.h, vp.mobile);
+    await setMotion('no-preference', vp.mobile);
+    await goto();
+    const r = await evalJs(String.raw`(async () => {
+      const sw = document.documentElement.scrollWidth;
+      const vw = document.documentElement.clientWidth;
+      // FAQ tetap interaktif: buka-tutup tombol pertama di tiap lebar.
+      const sec = document.getElementById('faq');
+      sec.scrollIntoView({ block: 'start' });
+      await new Promise(x => setTimeout(x, 400));
+      const btn = sec.querySelector('.faq-item button');
+      const before = btn.getAttribute('aria-expanded');
+      btn.click();
+      await new Promise(x => setTimeout(x, 300));
+      const after = btn.getAttribute('aria-expanded');
+      return { sw, vw, faqToggled: before !== after };
+    })()`);
+    check('no-h-scroll @' + vp.w + 'px', r.sw <= r.vw + 1, r.sw + ' <= ' + r.vw);
+    check('FAQ bisa diklik @' + vp.w + 'px', !!r.faqToggled, 'aria-expanded berpindah');
+  }
+}
+
+console.log('\n=== B14. KONSOL BERSIH ===');
+{
+  check('Tidak ada exception / console.error', pageProblems.length === 0, pageProblems.length + ' masalah');
+  if (pageProblems.length) pageProblems.slice(0, 5).forEach((p) => console.log('       ' + p));
 }
 
 console.log('\n' + '='.repeat(58));

@@ -13,7 +13,7 @@ import { JUDGES } from '../content';
 
 export function JudgesPartners() {
   return (
-    <Section id="juri">
+    <Section id="juri" z={50} card>
       <Eyebrow>{JUDGES.eyebrow}</Eyebrow>
 
       <h2 className="mt-5 max-w-[18ch] font-display text-[clamp(2.25rem,6vw,3.75rem)] leading-[1.05] font-semibold tracking-[-0.015em] text-bone">
@@ -22,10 +22,7 @@ export function JudgesPartners() {
 
       <p className="mt-5 max-w-[46ch] text-bone-dim">{JUDGES.lead}</p>
 
-      <RevealGroup
-        selector="[data-spotlight-card]"
-        className="mt-14 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
-      >
+      <RevealGroup className="mt-14 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {JUDGES.items.map((person) => (
           <SpotlightCard key={person.monogram} as="div" className="flex flex-col gap-5 p-7">
             <span
@@ -36,15 +33,13 @@ export function JudgesPartners() {
             </span>
 
             <div className="flex flex-col gap-2">
-              <span className="font-mono text-[0.6875rem] tracking-[0.18em] text-bone-dim uppercase">
+              <span className="font-sans text-[0.6875rem] tracking-[0.18em] text-bone-dim uppercase">
                 {person.kind}
               </span>
               <h3 className="text-[1.0625rem] leading-snug font-semibold text-bone">
                 {person.name}
               </h3>
-              <p className="font-mono text-[0.8125rem] leading-relaxed text-gold/70">
-                {person.role}
-              </p>
+              <p className="text-[0.875rem] leading-relaxed text-bone-dim">{person.role}</p>
             </div>
           </SpotlightCard>
         ))}

@@ -4,27 +4,26 @@
  * Dipisah dari `content.ts` dengan sengaja: file itu hanya berisi teks yang
  * bisa diedit pemilik situs, file ini berisi perilaku. Mengganti jarum warna
  * atau tanggal tidak boleh ikut mengubah timing animasi, dan sebaliknya.
+ *
+ * Stack animasi resmi proyek: paket `motion` (Motion for React) + CSS native
+ * + IntersectionObserver. Tidak ada GSAP, Lenis, atau ScrollTrigger di sini.
  */
 
 /* ---------------------------------------------------------------------------
    MEDIA QUERY — satu-satunya gerbang seluruh animasi
    ---------------------------------------------------------------------------
-   Setiap animasi di aplikasi ini didaftarkan di dalam `gsap.matchMedia()`.
-   Prinsipnya: ketika sebuah query tidak cocok, GSAP otomatis memanggil
-   `revert()` pada semua yang didaftarkan di dalamnya — termasuk mengembalikan
-   DOM SplitText ke teks asli dan menghapus transform yang dipasang. Tidak ada
-   state yang menggantung.
+   Prinsipnya: setiap animasi harus berhenti saat query-nya tidak cocok.
+   `useMediaQuery` di hooks/useMediaQuery.ts mengaboninya; CSS native memakai
+   @media yang sama persis. Tidak ada state yang menggantung.
    ------------------------------------------------------------------------ */
 
 export const MQ = {
   /** Gerak diizinkan (bukan reduced-motion). */
   motion: '(prefers-reduced-motion: no-preference)',
-  /** Gerak + layar cukup lebar. Ambang 768px: di bawah ini WebGL dimatikan. */
-  motionWide: '(prefers-reduced-motion: no-preference) and (min-width: 768px)',
-  /** Gerak + pointer presisi. Satu-satunya tempat kursor & magnet hidup. */
-  motionFinePointer:
+  /** Gerak + pointer presisi: magnet cerita. */
+  motionFine:
     '(prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine)',
-  /** Gerak + pointer presisi + layar lebar: parallax mouse yang mahal. */
+  /** Gerak + pointer presisi + layar lebar: kursor kustom & parallax. */
   motionFineWide:
     '(prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) and (min-width: 1024px)',
 } as const;
@@ -33,27 +32,27 @@ export const MQ = {
    EASE & DURASI
    ------------------------------------------------------------------------ */
 
-/** Reveal standar: cepat keluar, panjang mengendap. */
+/**
+ * Kurva easing dipakai paket `motion` (array cubic-bezier).
+ * Pola yang sama dipakai CSS lewat `--ease-elegant`.
+ */
 export const EASE = {
-  /** Kinetic typography per huruf — hentakan yang tegas. */
-  kinetic: 'power4.out',
-  /** Reveal blok konten. */
-  reveal: 'power3.out',
+  /** Kinetic typography — hentakan tegas. */
+  kinetic: [0.19, 1, 0.22, 1] as const,
+  /** Reveal blok konten: cepat keluar, panjang mengendap. */
+  reveal: [0.22, 1, 0.36, 1] as const,
   /** Kursor & magnet: mengikuti pointer tanpa terburu-buru. */
-  follow: 'power3.out',
-  /** Accordion: buka-tutup dengan inersia lembut. */
-  accordion: 'power2.inOut',
+  follow: [0.22, 1, 0.36, 1] as const,
 } as const;
 
 export const DUR = {
   kinetic: 1.0,
-  kineticStagger: 0.02,
+  /** Entrance chrome hero (eyebrow/subteks/CTA). Reveal saat scroll & stagger
+   *  punya Tokens sendiri di index.css (`--dur-reveal`, `--dur-reveal-stagger`)
+   *  karena animasinya murni CSS, bukan MotionValue. */
   reveal: 0.9,
-  revealStagger: 0.08,
-  cursorFollow: 0.45,
-  magnetic: 0.5,
-  accordion: 0.5,
-  hover: 0.3,
+  /** Konstanta waktu lerp cincin kursor (detik). Nilai kecil = ngejar lebih kencang. */
+  cursorTau: 0.16,
 } as const;
 
 /* ---------------------------------------------------------------------------
@@ -62,14 +61,10 @@ export const DUR = {
 
 /** Parallax: `y` dihitung dari jarak scroll, bukan offset absolut. */
 export const PARALLAX = {
-  /** Hero — helix bergerak paling lambat, memberi kedalaman. */
+  /** Ambient glow hero — bergerak paling lambat, memberi kedalaman. */
   heroBackdrop: { speed: 0.22, y: 90 },
-  /** Ornamen DNA di section Kenapa. */
+  /** Ornamen DNA di section "Kenapa Helixa". */
   dna: { speed: 0.16, y: 70 },
-  /** Simbol matematika — paling cepat, hampir lepas dari dokumen. */
-  symbols: { speed: 0.3, y: 120 },
-  /** Garis progres timeline Cara Ikut. */
-  timeline: { speed: 1 },
 } as const;
 
 /* ---------------------------------------------------------------------------

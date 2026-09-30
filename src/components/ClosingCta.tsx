@@ -1,8 +1,9 @@
 /**
- * CTA penutup + footer digabung.
+ * CTA penutup + footer.
  *
- * Kontak, Instagram, dan hak cipta memakai font mono pada label kecil supaya
- * menyatu dengan bahasa visual tanggal dan data di section lain.
+ * CTA adalah kartu terakhir dalam tumpukan (z=80), teks di tengah. Footer
+ * berada DI LUAR `<main>`, jadi ia tidak ikut di-pin — mengikuti setelah CTA
+ * dengan posisi normal.
  */
 import { Section } from './ui/Section';
 import { Eyebrow } from './ui/Eyebrow';
@@ -12,7 +13,7 @@ import { CLOSING, FOOTER, INSTAGRAM_URL, SITE } from '../content';
 
 export function ClosingCta() {
   return (
-    <Section id="daftar" divider>
+    <Section id="daftar" z={80} card>
       <div className="relative flex flex-col items-center gap-8 py-6 text-center">
         {/* Cincin emas samar sebagai latar aksen tunggal. */}
         <div
@@ -52,7 +53,7 @@ export function Footer() {
         <div className="flex flex-col gap-2">
           <span className="font-display text-[1.75rem] leading-none font-semibold text-gold">
             {SITE.wordmark}
-            <span className="ml-2.5 font-mono text-[0.6875rem] tracking-[0.18em] text-bone-dim uppercase">
+            <span className="ml-2.5 font-sans text-[0.6875rem] tracking-[0.18em] text-bone-dim uppercase">
               {SITE.wordmarkSuffix}
             </span>
           </span>
@@ -62,7 +63,7 @@ export function Footer() {
         <div className="flex flex-col gap-4 md:items-end">
           <a
             href={INSTAGRAM_URL}
-            className="nav-link inline-flex min-h-11 items-center font-mono text-[0.875rem] text-bone/80 hover:text-bone"
+            className="nav-link inline-flex min-h-11 items-center font-sans text-[0.875rem] text-bone/80 hover:text-bone"
             {...(/^https?:/i.test(INSTAGRAM_URL)
               ? { target: '_blank', rel: 'noreferrer noopener' }
               : {})}
@@ -70,7 +71,7 @@ export function Footer() {
             Instagram
           </a>
 
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 font-mono text-[0.8125rem] text-bone-dim">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2 font-sans text-[0.8125rem] text-bone-dim">
             <span>{FOOTER.contact}</span>
             <span aria-hidden="true" className="hidden h-3 w-px bg-gold-line sm:inline-block" />
             <span>{FOOTER.privacy}</span>
@@ -79,12 +80,29 @@ export function Footer() {
       </div>
 
       <div className="shell pb-10">
-        <div className="flex flex-col gap-2 border-t border-gold-line pt-6 font-mono text-[0.75rem] text-bone-dim md:flex-row md:items-center md:justify-between">
-          <span>
-            {'© '}
-            {SITE.copyrightYear} {SITE.wordmark} {SITE.wordmarkSuffix}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gold-line pt-8">
+          <span className="font-sans text-[0.8125rem] text-bone-dim">
+            © {SITE.copyrightYear} {SITE.wordmark} {SITE.wordmarkSuffix}
           </span>
-          <span>Matematika &amp; Biologi · SMA</span>
+          <a
+            href="#top"
+            className="nav-link inline-flex min-h-11 min-w-11 items-center gap-2 justify-center font-sans text-[0.8125rem] text-bone/80 hover:text-bone"
+          >
+            Kembali ke atas
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-3.5 w-3.5"
+            >
+              <path d="M8 13V3" />
+              <path d="M4 7l4-4 4 4" />
+            </svg>
+          </a>
         </div>
       </div>
     </footer>

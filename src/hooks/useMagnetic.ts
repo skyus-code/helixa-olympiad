@@ -3,18 +3,18 @@
  *
  * Dua syarat yang tidak bisa dilewati:
  *  1. Hanya di perangkat dengan pointer presisi. Di layar sentuh tidak ada
- *     kursor, jadi magnet hanya akan menambah event tanpa efek apa pun —
- *     dan menguras baterai.
- *  2. Hanya saat reduced-motion tidak aktif. Tarikan adalah perpindahan
- *     posisi yang jelas terasa sebagai gerakan.
+ *     kursor, jadi magnet hanya akan menambah event tanpa efek apa pun.
+ *  2. Hanya saat reduced-motion tidak aktif (query `motionFine`).
  *
- * Implementasi memakai `gsap.quickTo` (bukan `gsap.to` per event) supaya
- * pointermove yang datang 60x/detik tidak menumpuk tween.
+ * Implementasi tanpa GSAP: `pointermove` menulis dua custom property
+ * (`--magnet-x`, `--magnet-y`) di elemen, dan CSS (`.magnetic`) menerjemahkan
+ * keduanya ke transform dengan transisi halus. Pointermove yang datang
+ * 60x/detik cukup mengubah custom property — tidak ada tween yang menumpuk
+ * dan tidak ada re-render React (style satu elemen yang berubah).
  */
 import { useRef } from 'react';
-import { gsap } from '../lib/gsap';
-import { CURSOR, DUR, MQ } from '../lib/motion';
-import { useIsoLayoutEffect } from './useGsapMedia';
+import { CURSOR, MQ } from '../lib/motion';
+import { useIsoLayoutEffect } from './useIsoLayoutEffect';
 
 export function useMagnetic<T extends HTMLElement>(enabled = true) {
   const ref = useRef<T | null>(null);
@@ -24,66 +24,78 @@ export function useMagnetic<T extends HTMLElement>(enabled = true) {
     if (!el) return;
 
     if (!enabled) return;
-    if (!window.matchMedia(MQ.motionFinePointer).matches) return;
-
-    // quickTo menerima < 0.1s tanpa batas (nilai 0 = infinity) supaya
-    // gerakan berhenti tepat saat kursor diam.
-    const xTo = gsap.quickTo(el, 'x', { duration: DUR.magnetic, ease: 'power3.out' });
-    const yTo = gsap.quickTo(el, 'y', { duration: DUR.magnetic, ease: 'power3.out' });
+    if (!window.matchMedia(MQ.motionFine).matches) return;
 
     let rect: DOMRect | null = null;
-    // Cache rect: memanggil getBoundingClientRect() pada setiap pointermove
-    // memaksa layout di setiap frame.
+    let stale = true;
+
+    /*
+     * Rect diukur LAZY (hanya saat pointer benar-benar bergerak), bukan saat
+     * mount: mengukur saat mount memaksa layout sinkron di tengah load halaman.
+     */
     const measure = () => {
       rect = el.getBoundingClientRect();
+      stale = false;
     };
-    measure();
+
+    /*
+     * Scroll & resize hanya menandai rect basi — TIDAK mengoreksinya dengan
+     * delta scroll. Tombol ini berada di dalam section `position: sticky`
+     * yang berhenti bergerak begitu ter-pin, jadi koreksi delta scroll membuat
+     * cached rect melenceng justru di section yang sedang ditonjolkan.
+     * Pengukuran ulang ditunda ke frame berikutnya: satu layout per frame
+     * scroll, bukan satu per event scroll.
+     */
+    let raf = 0;
+    const invalidate = () => {
+      stale = true;
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        measure();
+      });
+    };
+
+    const apply = (x: number, y: number) => {
+      el.style.setProperty('--magnet-x', x + 'px');
+      el.style.setProperty('--magnet-y', y + 'px');
+    };
 
     const onMove = (e: PointerEvent) => {
-      if (!rect) measure();
+      if (!rect || stale) measure();
       if (!rect) return;
       const cx = rect.left + rect.width / 2;
       const cy = rect.top + rect.height / 2;
       const dx = e.clientX - cx;
       const dy = e.clientY - cy;
-      // Jarak dari titik tengah. Mengukur jarak (bukan offset per sumbu)
-      // bikin magnet terasa melingkar, bukan kotak.
+      // Jarak dari titik tengah: mengukur jarak (bukan offset per sumbu)
+      // membuat magnet terasa melingkar, bukan kotak.
       const dist = Math.hypot(dx, dy);
       const radius = Math.max(rect.width, rect.height) / 2 + CURSOR.magneticRadius;
       if (dist > radius) {
-        xTo(0);
-        yTo(0);
+        apply(0, 0);
         return;
       }
-      // Pergeseran dibatasi dua lapis. Pertama, proporsional terhadap ukuran
-      // elemen: tombol kecil tidak boleh melesat sejauh kartu besar. Kedua,
-      // pagar keras `magneticMax`. Tanpa pagar ini, mengarahkan kursor ke tepi
-      // tombol yang lebarnya 150px bisa menggesernya 20-30px — cukup untuk
-      // menabrak tombol di sebelahnya.
+      // Pergeseran dibatasi dua lapis: proporsional terhadap ukuran elemen
+      // lalu pagar keras `magneticMax`.
       const cap = Math.min(Math.max(rect.width, rect.height) * 0.12, CURSOR.magneticMax);
       const pull = (v: number) => Math.max(-cap, Math.min(cap, v * CURSOR.magneticStrength));
-      xTo(pull(dx));
-      yTo(pull(dy));
+      apply(pull(dx), pull(dy));
     };
 
-    const onLeave = () => {
-      xTo(0);
-      yTo(0);
-    };
-
-    const onScroll = () => measure();
+    const onReset = () => apply(0, 0);
 
     window.addEventListener('pointermove', onMove, { passive: true });
-    el.addEventListener('pointerleave', onLeave);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll, { passive: true });
+    el.addEventListener('pointerleave', onReset);
+    window.addEventListener('scroll', invalidate, { passive: true });
+    window.addEventListener('resize', invalidate, { passive: true });
 
     return () => {
+      cancelAnimationFrame(raf);
       window.removeEventListener('pointermove', onMove);
-      el.removeEventListener('pointerleave', onLeave);
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
-      gsap.killTweensOf(el);
+      el.removeEventListener('pointerleave', onReset);
+      window.removeEventListener('scroll', invalidate);
+      window.removeEventListener('resize', invalidate);
     };
   }, [enabled]);
 
@@ -91,9 +103,8 @@ export function useMagnetic<T extends HTMLElement>(enabled = true) {
 }
 
 /**
- * Mengubah ukuran cincin kursor saat kursor berada di atas elemen interaktif.
- * Mengembalikan ref untuk dipasang ke elemen target, plus setter yang
- * dipanggil CursorLayer.
+ * Registri global elemen interaktif — dipakai CursorLayer untuk membesarkan
+ * cincin kursor saat kursor berada di atas elemen yang terdaftar.
  */
 const hoverTargets = new Set<HTMLElement>();
 const listeners = new Set<(active: boolean) => void>();
@@ -117,8 +128,7 @@ export function subscribeHoverState(fn: (active: boolean) => void) {
   listeners.add(fn);
   // Kirim state saat ini seketika. Tanpa ini, subscriber yang terpasang
   // SETELAH semua target terdaftar (CursorLayer berada di akhir pohon DOM)
-  // tidak pernah tahu targets sudah ada, sehingga cincin kursor tertahan
-  // di ukuran idle sampai ada perubahan berikutnya.
+  // tidak pernah tahu targets sudah ada.
   fn(hoverTargets.size > 0);
   return () => listeners.delete(fn);
 }

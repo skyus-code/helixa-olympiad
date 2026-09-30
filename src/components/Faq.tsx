@@ -1,11 +1,11 @@
 /**
- * FAQ - akordeon dengan animasi tinggi GSAP.
+ * FAQ - akordeon murni CSS (grid-template-rows 0fr -> 1fr).
  *
- * Animasi `height: auto` adalah bagian yang biasanya paling merepotkan:
- * `auto` bukan nilai yang bisa diinterpolasi, jadi banyak developer resort ke
- * `max-height` dengan angka tebakan, dan akibatnya durasi terasa berbeda antar
- * panel. GSAP mengukur tinggi akhir sendiri lalu menganimasikan ke sana, jadi
- * semua panel terasa sama cepat.
+ * `auto` bukan nilai yang bisa diinterpolasi, jadi animasi tinggi panel
+ * memakai trik grid-rows: panel luar membungkus inner ber-`overflow hidden`,
+ * dan mengalihkan `grid-template-rows` dari `0fr` ke `1fr` membuat tinggi
+ * animasi halus dengan durasi merata untuk semua panel, tanpa mengukur apa
+ * pun di JS.
  *
  * Aksesibilitas yang dijaga:
  *  - Tombol punya aria-expanded dan aria-controls.
@@ -13,13 +13,12 @@
  *    dengan Tab dan tidak dibaca screen reader.
  *  - Hanya satu panel terbuka pada satu waktu.
  *
- * Fail-safe: CSS menyisakan jawaban pertama terbuka, supaya pengunjung dengan
- * JavaScript mati tetap membaca sesuatu, bukan lima pertanyaan tanpa isi.
+ * Fail-safe: CSS membiarkan jawaban pertama terbuka selama container belum
+ * punya data-js (`.faq-list:not([data-js]) .faq-item:first-of-type`), jadi
+ * pengunjung dengan JavaScript mati tetap membaca sesuatu.
  */
 import { useRef, useState } from 'react';
-import { gsap } from '../lib/gsap';
-import { EASE, DUR, MQ } from '../lib/motion';
-import { useGsapMedia, useIsoLayoutEffect } from '../hooks/useGsapMedia';
+import { useIsoLayoutEffect } from '../hooks/useIsoLayoutEffect';
 import { Section } from './ui/Section';
 import { Eyebrow } from './ui/Eyebrow';
 import { RevealGroup } from './ui/Reveal';
@@ -28,80 +27,21 @@ import { FAQ } from '../content';
 export function Faq() {
   const [openIndex, setOpenIndex] = useState<number | null>(0);
   const panelRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const mounted = useRef(false);
 
-  // Seluruh kerja tinggi panel terjadi DI SINI, bukan di event handler klik.
-  //
-  // Alasannya urutan waktu: setState() bersifat asinkron, jadi layout effect
-  // selalu berjalan SETELAH event handler selesai. Kalau tween dimulai di
-  // handler, layout effect akan langsung menimpanya dengan height 'auto' atau
-  // 0, dan animasinya hilang total. Satu tempat, satu sumber kebenaran.
+  // Satu-satunya kerja JS pada panel: menandai item terbuka dan mengatur
+  // `inert`. Transisi tinggi sepenuhnya ada di CSS (grid-rows).
   useIsoLayoutEffect(() => {
-    const first = !mounted.current;
-    mounted.current = true;
-
     panelRefs.current.forEach((panel, i) => {
       if (!panel) return;
       const open = i === openIndex;
-
-      if (first) {
-        // Pas mounting: set langsung, tanpa tween. Ini juga jalur yang dipakai
-        // saat reduced-motion aktif, sehingga panel tidak pernah tersangkut di
-        // tengah animasi.
-        if (open) {
-          panel.removeAttribute('inert');
-          gsap.set(panel, { height: 'auto' });
-        } else {
-          panel.setAttribute('inert', '');
-          gsap.set(panel, { height: 0 });
-        }
-        return;
-      }
-
-      const from = panel.getBoundingClientRect().height;
-
-      if (open) {
-        panel.removeAttribute('inert');
-        gsap.fromTo(
-          panel,
-          { height: from },
-          { height: 'auto', duration: DUR.accordion, ease: EASE.accordion, overwrite: true },
-        );
-      } else {
-        if (from === 0) {
-          panel.setAttribute('inert', '');
-          return;
-        }
-        gsap.fromTo(
-          panel,
-          { height: from },
-          {
-            height: 0,
-            duration: DUR.accordion,
-            ease: EASE.accordion,
-            overwrite: true,
-            onComplete: () => panel.setAttribute('inert', ''),
-          },
-        );
-      }
+      panel.closest('.faq-item')?.classList.toggle('is-open', open);
+      if (open) panel.removeAttribute('inert');
+      else panel.setAttribute('inert', '');
     });
   }, [openIndex]);
 
-  // Matikan transisi CSS selama blokir reduced-motion berjalan, supaya nilai
-  // akhir langsung berlaku tanpa interpolasi apa pun.
-  useGsapMedia(MQ.motion, () => {
-    panelRefs.current.forEach((panel) => {
-      if (panel) panel.style.transition = 'none';
-    });
-    return () => {
-      panelRefs.current.forEach((panel) => {
-        if (panel) panel.style.transition = '';
-      });
-    };
-  });
-
   return (
-    <Section id="faq">
+    <Section id="faq" z={70} card>
       <div className="grid gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:gap-16">
         <div>
           <Eyebrow>{FAQ.eyebrow}</Eyebrow>
@@ -113,11 +53,14 @@ export function Faq() {
           <p className="mt-5 max-w-[38ch] text-bone-dim">{FAQ.lead}</p>
         </div>
 
-        <RevealGroup selector="[data-faq-item]" className="border-t border-gold-line">
+        <RevealGroup
+          className="faq-list border-t border-gold-line"
+          htmlAttrs={{ 'data-js': '' }}
+        >
           {FAQ.items.map((item, i) => {
             const open = openIndex === i;
             return (
-              <div key={item.question} data-faq-item className="faq-item border-b border-gold-line">
+              <div key={item.question} className="faq-item border-b border-gold-line">
                 <h3>
                   <button
                     type="button"
@@ -154,11 +97,13 @@ export function Faq() {
                   }}
                   role="region"
                   aria-label={item.question}
-                  className="faq-body"
+                  className="faq-panel"
                 >
-                  <p className="max-w-[60ch] pr-8 pb-6 text-[1.0625rem] leading-relaxed text-bone-dim">
-                    {item.answer}
-                  </p>
+                  <div className="faq-panel-inner">
+                    <p className="max-w-[60ch] pr-8 pb-6 text-[1.0625rem] leading-relaxed text-bone-dim">
+                      {item.answer}
+                    </p>
+                  </div>
                 </div>
               </div>
             );

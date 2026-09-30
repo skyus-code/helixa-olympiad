@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useMagnetic, registerHoverTarget } from '../../hooks/useMagnetic';
-import { useIsoLayoutEffect } from '../../hooks/useGsapMedia';
+import { useIsoLayoutEffect } from '../../hooks/useIsoLayoutEffect';
 
 function ArrowRight({ className = '' }: { className?: string }) {
   return (
