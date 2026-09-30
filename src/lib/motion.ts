@@ -87,9 +87,9 @@ export const CURSOR = {
    * berdekatan ikut tertarik saat kursor lewat di antara keduanya dan terasa
    * seperti saling menabrak.
    */
-  magneticRadius: 90,
+  magneticRadius: 30,
   /** Proporsi tarikan magnet terhadap jarak. 1 = mengikuti penuh. */
   magneticStrength: 0.2,
   /** Batas pergeseran magnet dalam piksel (per sumbu), lihat useMagnetic. */
-  magneticMax: 10,
+  magneticMax: 5,
 } as const;

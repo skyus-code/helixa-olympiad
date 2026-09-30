@@ -29,7 +29,7 @@ npm run build && npm run preview -- --port 4200 --strictPort
 
 # terminal 2
 npm run check:responsive   # 11 viewport: overflow, teks terpotong, target sentuh
-npm run check:verify       # 84 cek perilaku & animasi
+npm run check:verify       # 85 cek perilaku & animasi
 ```
 
 Keduanya menerima URL sebagai argumen pertama, default `http://localhost:5173/`:
@@ -121,7 +121,7 @@ Helixa Olympiad/
 ├─ public/favicon.svg      # ikon emas, SVG tulen
 ├─ scripts/
 │  ├─ audit.mjs            # 11 viewport + deteksi overflow / teks terpotong / target sentuh
-│  └─ verify.mjs           # 84 cek perilaku & animasi (14 bagian)
+│  └─ verify.mjs           # 85 cek perilaku & animasi (14 bagian)
 └─ src/
    ├─ main.tsx
    ├─ App.tsx
@@ -322,6 +322,11 @@ menyembul keluar. Cincin tetap mengejar pointer lewat `gsap.quickTo` (`0.45s`, `
 sehingga saat gerak cepat dot sudah sampai duluan dan cincin menyusul. Dua lapisan itu sengaja
 **boleh berpisah saat bergerak cepat**, mengikuti pola situs premium.
 
+Pusat cincin dijaga tetap di pointer berapa pun ukurannya: margin negatif
+(`-size/2`) ikut dianimasikan bersama `width`/`height` saat ring tumbuh
+14px ↔ 44px. Dulu margin dikunci di `-14/2`, jadi cincin aktif 44px pusatnya
+bergeser 15px dan dot tampak tidak di tengah ring.
+
 Didaftarkan ke `<body>` dengan `position: fixed` + `pointer-events: none`, sehingga tidak
 pernah jadi blocker klik atau ikut ter-scroll. Element `<html>` diberi `data-custom-cursor="on"`
 hanya di perangkat pointer presisi, dan `cursor: none` hanya diaktifkan di bawah
@@ -471,7 +476,7 @@ Semua diukur terhadap **production build** (`npm run build` → `npm run preview
 
 Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 
-**`verify.mjs` — 84/84 cek lulus** terhadap build yang sama. Ringkasan bagian:
+**`verify.mjs` — 85/85 cek lulus** terhadap build yang sama. Ringkasan bagian:
 
 | Bagian | Yang dibuktikan |
 |---|---|
@@ -480,7 +485,7 @@ Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 | 3 | 28 elemen reveal, awalnya `opacity: 0` di bawah fold, 0 tersisa tersembunyi |
 | 4 | 7 tinggi berbeda dan monoton saat accordion (bukan lompat), `inert` tepat |
 | 5 | Canvas 1440×900, `opacity: 0.996`, mesh menambah **~48 kB** piksel PNG |
-| 6 | Cincin 44px saat ada target, mengikuti pointer (700,400) → (300,250); dot menempel tepat di posisi pointer (lompat 640,430 → 120,310 seketika) sementara cincin tertinggal |
+| 6 | Cincin 44px saat ada target, mengikuti pointer (700,400) → (300,250); dot menempel tepat di posisi pointer (lompat 640,430 → 120,310 seketika) sementara cincin tertinggal; cincin tetap berpusat di pointer saat membesar (offset 0,0 di w=44) |
 | 7 | Magnet (0,0) → (6.0,0) — tarikan 20% + pembatas, kembali tepat ke (0.00, 0.00) |
 | 8 | `--mx` 210px, `--my` 30px, gradient radial di `::before` |
 | 9 | `scaleX` 0.00 → 1.00 mengikuti scroll |

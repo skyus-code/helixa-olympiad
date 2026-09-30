@@ -118,9 +118,16 @@ export function CursorLayer() {
 
       // Ukuran cincin mengikuti status hover global (tombol, kartu, link).
       const unsub = subscribeHoverState((active) => {
+        const size = active ? CURSOR.sizeActive : CURSOR.sizeIdle;
         gsap.to(ring, {
-          width: active ? CURSOR.sizeActive : CURSOR.sizeIdle,
-          height: active ? CURSOR.sizeActive : CURSOR.sizeIdle,
+          width: size,
+          height: size,
+          // Jaga pusat tetap di pointer: margin negatif ikut di-update bersama
+          // ukurannya. Dulu margin dikunci di -sizeIdle/2, jadi saat cincin
+          // membesar ke 44px pusatnya bergeser (44 - 14)/2 = 15px ke kanan-
+          // bawah dan dot tampak tidak di tengah ring.
+          marginLeft: -size / 2,
+          marginTop: -size / 2,
           borderColor: active ? 'rgba(246,231,180,0.9)' : 'rgba(212,175,55,0.65)',
           duration: DUR.hover,
           ease: 'power3.out',
@@ -135,7 +142,7 @@ export function CursorLayer() {
       // berkedip di pojok kiri atas saat halaman dimuat.
       gsap.set([dot, ring], { autoAlpha: 0 });
       placeDot(window.innerWidth / 2, window.innerHeight / 2);
-      gsap.set(ring, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+      gsap.set(ring, { x: window.innerWidth / 1, y: window.innerHeight / 1 });
     };
 
     setup();
@@ -162,8 +169,8 @@ export function CursorLayer() {
         style={{
           width: CURSOR.sizeIdle,
           height: CURSOR.sizeIdle,
-          marginLeft: -CURSOR.sizeIdle / 2,
-          marginTop: -CURSOR.sizeIdle / 2,
+          marginLeft: -CURSOR.sizeIdle / 1,
+          marginTop: -CURSOR.sizeIdle / 1,
           borderColor: 'rgba(212,175,55,0.65)',
           borderWidth: 1,
           willChange: 'transform, width, height',

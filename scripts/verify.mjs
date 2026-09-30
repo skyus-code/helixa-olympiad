@@ -740,6 +740,30 @@ console.log('\n=== 6. KURSOR KUSTOM ===');
   check('Titik memindahkan diri seketika saat kursor lompat', !!precision.dotAtPointer,
     'dot=(' + precision.dotNow.x + ',' + precision.dotNow.y + ')');
   check('Cincin tertinggal mengejar di belakang titik', !!precision.ringLagging);
+
+  // Cincin harus selalu berpusat di titik anchor (pointer) berapa pun
+  // ukurannya. Dulu margin negatif dikunci di -sizeIdle/2, jadi cincin aktif
+  // 44px pusatnya bergeser (44-14)/2 = 15px ke kanan-bawah -> dot tampak
+  // tidak di tengah. Cek: pusat kotak cincin (rect) harus sama dengan posisi
+  // transform-nya (anchor).
+  const centered = await evalJs(String.raw`(async () => {
+    const ring = [...document.querySelectorAll('.fixed.rounded-full')]
+      .find(e => e.className.includes('border'));
+    window.dispatchEvent(new PointerEvent('pointermove', {
+      clientX: 700, clientY: 430, bubbles: true, pointerType: 'mouse' }));
+    await new Promise(r => setTimeout(r, 700));
+    const r = ring.getBoundingClientRect();
+    const t = window.__xform(ring);
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    return {
+      w: Math.round(r.width),
+      offsetX: cx - t.x, offsetY: cy - t.y,
+      centered: Math.abs(cx - t.x) < 1 && Math.abs(cy - t.y) < 1,
+    };
+  })()`);
+  check('Cincin tetap berpusat di pointer saat membesar', centered.centered,
+    'w=' + centered.w + ' offset=(' + centered.offsetX.toFixed(1) + ','
+    + centered.offsetY.toFixed(1) + ')');
 }
 
 console.log('\n=== 7. MAGNETIC PULL ===');
