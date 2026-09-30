@@ -57,15 +57,17 @@ berubah, piksel yang benar-benar tergambar.
 4. **FAQ** — `height: auto` GSAP, rekam tinggi per frame, `inert`, satu-buka
 5. **WebGL** — canvas, konteks, fade-in, dan mesh benar-benar memberi piksel lewat selisih
    tangkapan layar
-6. **Kursor kustom** — cincin 14px → 44px, mengikuti pointer
-7. **Magnetic pull** — elemen tertarik dan kembali ke tempat
-8. **Spotlight** — `--mx` / `--my` diperbarui, gradient di `::before`
-9. **Garis progres** — `scaleX` tumbuh mengikuti scroll
-10. **Parallax** — `translate` ornamen DNA berubah
-11. **Navbar** — transparan di atas → `blur(24px)` + alpha 0.72 setelah scroll
-12. **Mobile** — `pointer: coarse` nyata: kursor & magnet mati, Three.js mati, menu modal
-13. **Reduced motion** — Lenis mati, SplitText tidak jalan, semua konten tetap terlihat
-14. **Konsol bersih** — nol exception, nol `console.error`
+6. **Kursor kustom** — cincin 14px → 44px mengikuti pointer; titik selalu tepat di pusat cincin
+7. **Magnetic pull** — tarikan dibatasi (proporsional ukuran + pagar 10px), elemen kembali ke tempat
+8. **Scroll overlap** — konten section naik menimpa ekor section sebelumnya saat menggulir
+   (Kenapa → menutupi ekor Hero, Cara Ikut → menutupi ekor Perdana)
+9. **Spotlight** — `--mx` / `--my` diperbarui, gradient di `::before`
+10. **Garis progres** — `scaleX` tumbuh mengikuti scroll
+11. **Parallax** — `translate` ornamen DNA berubah
+12. **Navbar** — transparan di atas → `blur(24px)` + alpha 0.72 setelah scroll
+13. **Mobile** — `pointer: coarse` nyata: kursor & magnet mati, Three.js mati, menu modal
+14. **Reduced motion** — Lenis mati, SplitText tidak jalan, semua konten tetap terlihat
+15. **Konsol bersih** — nol exception, nol `console.error`
 
 ### Empat jebakan pengukuran yang sudah ditangani
 
@@ -135,9 +137,9 @@ Helixa Olympiad/
    │  ├─ useKineticText.ts    # SplitText + mask + autoSplit
    │  └─ useMagnetic.ts       # registerHoverTarget + subscribeHoverState
    ├─ three/
-   │  └─ helixScene.ts     # mesh heliks, tilting cursor, timing rAF manual
+   │  └─ helixScene.ts     # mesh heliks + satelit + serbuk partikel, tilting kursor, timing rAF manual
    └─ components/
-      ├─ CursorLayer.tsx   # cincin emas tipis + titik
+      ├─ CursorLayer.tsx   # cincin emas tipis + titik (titik mengikuti pusat cincin)
       ├─ HeroCanvas.tsx    # canvas WebGL, lazy, gated ready && inView
       ├─ Navbar.tsx
       ├─ Hero.tsx
@@ -238,7 +240,7 @@ Tidak ada satu pun gambar eksternal. Semua ornamen SVG, CSS, atau Canvas 3D.
 
 | Komponen | Isi | Letak |
 |---|---|---|
-| `helixScene` | Mesh heliks Three.js (partikel + garis), tilting mengikuti kursor, parallax saat scroll | Latar hero, ≥768px saja |
+| `helixScene` | Mesh heliks Three.js: untai partikel + tangga, cincin konstanta, bola emas pengorbit (satelit), serbuk partikel mengambang naik; tilting mengikuti kursor, parallax saat scroll | Latar hero, ≥768px saja |
 | `HeroCanvas` | Ambient glow radial CSS | Selalu ada; menggantikan WebGL di mobile & reduced-motion |
 | `DnaHelix` | Dua untai sinusoidal berpelintir + anak tangga | Section Kenapa Helixa |
 | `MathSymbols` | Σ, π, ∫, φ | Latar section Kenapa, parallax |
@@ -283,6 +285,20 @@ akan terlambat satu frame.
 `anchors: true` membuat tautan anchor ikut mulus. Saat menu mobile terbuka, Lenis
 `stop()` dan scroll body dikunci; `Esc` melepas keduanya.
 
+### Overlap antar section (scroll overlap)
+
+Perbatasan antar section tidak dipotong kaku: di dua tempat isi section **naik dari bawah
+menimpa ekor section sebelumnya** selama masih terlihat di layar. Keduanya `gsap.fromTo`
+dengan `scrub`, jadi gerakannya terikat scroll dan dibatalkan saat reduced-motion.
+
+| Tempat | Tarikan | Rentang |
+|---|---|---|
+| `WhyHelixa` (Kenapa) → menimpa ekor Hero | `y: 150 → 0` | `top bottom` → `top 35%` |
+| `HowToJoin` (Cara Ikut) → menimpa ekor Perdana | `y: 150 → 0` | `top bottom` → `top 35%` |
+
+Bersamaan dengan itu parallax Hero menarik kontennya ke bawah pada rentang yang sama, jadi
+dua lapisan konten benar-benar saling melintas — bukan sekadar fade.
+
 ### Kinetic typography
 
 GSAP `SplitText` dengan `type: 'lines,words,chars'` dan `mask: 'lines'`, sehingga tiap baris
@@ -298,19 +314,24 @@ membaca kalimat normal, bukan huruf demi huruf.
 
 ### Kursor kustom
 
-Cincin emas tipis + titik. Ukuran 14px diam → 44px saat ada target hover. Perpindahan pakai
-`gsap.quickTo`, jadi tidak ada re-render React per frame. Didaftarkan ke `<body>` dengan
-`position: fixed` + `pointer-events: none`, sehingga tidak pernah jadi blocker klik.
+Cincin emas tipis + titik. Ukuran 14px diam → 44px saat ada target hover. Posisi titik tidak
+dieranimasikan sendiri: setiap kali cincin bergerak, posisi cincin disalin ke titik lewat
+`onUpdate` dari `gsap.quickTo` cincin. Hasilnya titik **selalu berada tepat di pusat cincin**
+sekalipun cincin masih "mengejar" pointer — dua lapisan itu tidak pernah bisa berpisah.
 
-Element `<html>` diberi `data-custom-cursor="on"` hanya di perangkat pointer presisi, dan
-`cursor: none` hanya diaktifkan di bawah `@media (hover: hover) and (pointer: fine)`. Kalau JS
-gagal, pengguna mouse tidak kehilangan penanda.
+Didaftarkan ke `<body>` dengan `position: fixed` + `pointer-events: none`, sehingga tidak
+pernah jadi blocker klik atau ikut ter-scroll. Element `<html>` diberi `data-custom-cursor="on"`
+hanya di perangkat pointer presisi, dan `cursor: none` hanya diaktifkan di bawah
+`@media (hover: hover) and (pointer: fine)`. Kalau JS gagal, pengguna mouse tidak kehilangan
+penanda.
 
 ### Magnetic pull
 
-Elemen yang jaraknya dalam 110px dari pointer tertarik sebesar 32% dari jarak itu, lalu kembali
-ke tempat begitu pointer menjauh. `getBoundingClientRect()` di-cache dan hanya diukur ulang
-saat resize atau scroll.
+Elemen yang jaraknya dalam 90px dari pointer tertarik sebesar 20% dari jarak itu, serta dibatasi
+`Math.min(ukuran terbesar elemen × 0.12, 10px)` per sumbu. Dua pembatas itu mencegah tombol
+bersebelahan "menabrak" satu sama lain saat kursor lewat di perbatasannya. Elemen kembali ke
+tempat begitu pointer menjauh. `getBoundingClientRect()` di-cache dan hanya diukur ulang saat
+resize atau scroll.
 
 ### FAQ
 
@@ -457,7 +478,7 @@ Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 | 4 | 7 tinggi berbeda dan monoton saat accordion (bukan lompat), `inert` tepat |
 | 5 | Canvas 1440×900, `opacity: 0.996`, mesh menambah **~48 kB** piksel PNG |
 | 6 | Cincin 44px saat ada target, mengikuti pointer (700,400) → (300,250) |
-| 7 | Magnet (0,0) → (9.6,0), kembali tepat ke (0.00, 0.00) |
+| 7 | Magnet (0,0) → (6.0,0) — tarikan 20% + pembatas, kembali tepat ke (0.00, 0.00) |
 | 8 | `--mx` 210px, `--my` 30px, gradient radial di `::before` |
 | 9 | `scaleX` 0.00 → 1.00 mengikuti scroll |
 | 10 | `translate` 0px → 70px |

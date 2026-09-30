@@ -51,12 +51,25 @@ export function CursorLayer() {
 
       root.setAttribute('data-custom-cursor', 'on');
 
-      // Titik dalam hampir tanpa delay, cincin luar mengikuti dengan lerp. Ini
-      // yang membuat kursor terasa hidup, bukan seperti gambar yang menempel.
-      const xTo = gsap.quickTo(dot, 'x', { duration: 0.08, ease: 'none' });
-      const yTo = gsap.quickTo(dot, 'y', { duration: 0.08, ease: 'none' });
-      const ringX = gsap.quickTo(ring, 'x', { duration: DUR.cursorFollow, ease: 'power3.out' });
-      const ringY = gsap.quickTo(ring, 'y', { duration: DUR.cursorFollow, ease: 'power3.out' });
+      // Titik dalam harus selalu tepat di pusat cincin. Kalau titik diberi
+      // lerp sendiri yang lebih cepat daripada cincin, ia akan menyembul
+      // keluar dari lingkaran saat kursor bergerak cepat. Solusinya: posisi
+      // titik disalin dari posisi cincin — yang sedang dilerp — setiap kali
+      // cincin bergerak, sehingga keduanya tidak pernah bisa berpisah.
+      const alignDot = () => {
+        dot.style.transform =
+          'translate(' + gsap.getProperty(ring, 'x') + 'px, ' + gsap.getProperty(ring, 'y') + 'px)';
+      };
+      const ringX = gsap.quickTo(ring, 'x', {
+        duration: DUR.cursorFollow,
+        ease: 'power3.out',
+        onUpdate: alignDot,
+      });
+      const ringY = gsap.quickTo(ring, 'y', {
+        duration: DUR.cursorFollow,
+        ease: 'power3.out',
+        onUpdate: alignDot,
+      });
 
       let visible = false;
       const show = () => {
@@ -71,8 +84,6 @@ export function CursorLayer() {
 
       const onMove = (e: PointerEvent) => {
         show();
-        xTo(e.clientX);
-        yTo(e.clientY);
         ringX(e.clientX);
         ringY(e.clientY);
       };

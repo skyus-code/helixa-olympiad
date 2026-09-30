@@ -10,8 +10,9 @@
  *
  * Isi visual: dua untai heliks (DNA) yang disusun pada kurva logaritmik
  * (golden ratio) dengan tangga emas sebagai "riser"-nya, ditambah cincin
- * tipis sebagai penanda konstanta. Semua dari BufferGeometry — tidak ada
- * aset eksternal.
+ * tipis sebagai penanda konstanta, bola emas kecil yang mengorbit (satelit),
+ * dan serbuk partikel redup yang mengambang naik. Semua dari BufferGeometry
+ * atau primitif bawaan — tidak ada aset eksternal.
  */
 import * as THREE from 'three';
 
@@ -186,6 +187,59 @@ export async function createHelixScene(canvas: HTMLCanvasElement): Promise<Scene
   scene.add(ringGroup);
 
   /* ---------------------------------------------------------------------
+     Satelit: bola emas kecil yang mengorbit heliks
+     --------------------------------------------------------------------- */
+  // Sekumpulan bola kecil pada garis edar elips yang diputar pelan dengan
+  // kemiringan sedikit. Perannya memberi skala kedalaman di samping heliks —
+  // heliks sendirian terasa datar, dengan orbit terasa tiga dimensi.
+  const SATELLITES = 6;
+  const satelliteGroup = new THREE.Group();
+  const satelliteParts: Array<{ geo: THREE.BufferGeometry; mat: THREE.Material }> = [];
+  for (let i = 0; i < SATELLITES; i++) {
+    const r = 2.2 + (i % 3) * 0.55;
+    const geo = new THREE.SphereGeometry(0.055 + (i % 2) * 0.028, 12, 8);
+    const mat = new THREE.MeshBasicMaterial({
+      color: i % 2 === 0 ? GOLD_BRIGHT : GOLD,
+      transparent: true,
+      opacity: 0.75,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(r, (i - 2.5) * 1.5, 0);
+    satelliteGroup.add(mesh);
+    satelliteParts.push({ geo, mat });
+  }
+  satelliteGroup.rotation.x = 0.45;
+  satelliteGroup.position.y = 0.4;
+  scene.add(satelliteGroup);
+
+  /* ---------------------------------------------------------------------
+     Serbuk partikel: titik redup yang mengambang naik perlahan
+     --------------------------------------------------------------------- */
+  const SPARKLES = 150;
+  const sparklePositions = new Float32Array(SPARKLES * 3);
+  for (let i = 0; i < SPARKLES; i++) {
+    const ang = Math.random() * Math.PI * 2;
+    const rad = 1.4 + Math.random() * 2.6;
+    sparklePositions[i * 3] = Math.cos(ang) * rad;
+    sparklePositions[i * 3 + 1] = (Math.random() - 0.5) * 6.4;
+    sparklePositions[i * 3 + 2] = Math.sin(ang) * rad;
+  }
+  const sparkleGeo = new THREE.BufferGeometry();
+  sparkleGeo.setAttribute('position', new THREE.BufferAttribute(sparklePositions, 3));
+  const sparkleMat = new THREE.PointsMaterial({
+    color: GOLD,
+    size: 0.055,
+    transparent: true,
+    opacity: 0.35,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+  const sparkles = new THREE.Points(sparkleGeo, sparkleMat);
+  scene.add(sparkles);
+
+  /* ---------------------------------------------------------------------
      State pointer & scroll
      --------------------------------------------------------------------- */
   let pointerTarget = { x: 0, y: 0 };
@@ -251,6 +305,18 @@ export async function createHelixScene(canvas: HTMLCanvasElement): Promise<Scene
     ringGroup.rotation.z = scrollProgress * 0.9;
     ringGroup.position.y = scrollProgress * 3.0;
 
+    // Satelit berputar mengelilingi heliks; serbuk partikel mengambang naik
+    // lalu kembali dari bawah, seperti debu emas yang melayang di udara.
+    satelliteGroup.rotation.y += dt * 0.35;
+    const sparkAttr = sparkleGeo.getAttribute('position') as THREE.BufferAttribute;
+    const sparkArr = sparkAttr.array as Float32Array;
+    for (let i = 0; i < SPARKLES; i++) {
+      sparkArr[i * 3 + 1] += dt * 0.12;
+      if (sparkArr[i * 3 + 1] > 3.4) sparkArr[i * 3 + 1] = -3.4;
+    }
+    sparkAttr.needsUpdate = true;
+    sparkles.rotation.y += dt * 0.05;
+
     renderer.render(scene, camera);
   };
 
@@ -307,6 +373,12 @@ export async function createHelixScene(canvas: HTMLCanvasElement): Promise<Scene
         if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
         else mat?.dispose();
       });
+      satelliteParts.forEach(({ geo, mat }) => {
+        geo.dispose();
+        mat.dispose();
+      });
+      sparkleGeo.dispose();
+      sparkleMat.dispose();
       renderer.dispose();
     },
   };

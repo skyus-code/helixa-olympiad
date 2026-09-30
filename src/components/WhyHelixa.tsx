@@ -5,13 +5,18 @@
  * SpotlightCard). Ornamen DNA di belakang diberi parallax lebih lambat dari
  * isi section, sehingga muncul kesan kedalaman.
  *
- * Catatan grid: pemisah antar kartu dibuat dengan `gap-px` di atas latar
- * `bg-gold-line`, bukan border per kartu. Border per kartu akan menghasilkan
- * garis ganda (1px kartu + 1px gap) yang terlihat tebal di ukuran 320px.
+ * Kartu tidak lagi dibungkus panel emas: tiap kartu berdiri sendiri dengan
+ * border dan permukaan `bg-surface`-nya, dan grid memakai `gap-3` supaya ada
+ * ruang antar kartu. Panel emas dihapus setelah terlihat seperti "naungan"
+ * yang menempel di belakang kotak.
+ *
+ * Efek "scroll overlap": saat section masuk dari bawah, semua isinya ditarik
+ * naik (scrub) menimpa area hero yang masih terlihat — dua lapis konten
+ * saling melintas di perbatasan section.
  */
 import { useRef } from 'react';
 import { gsap } from '../lib/gsap';
-import { MQ, PARALLAX } from '../lib/motion';
+import { EASE, MQ, PARALLAX } from '../lib/motion';
 import { useGsapMedia } from '../hooks/useGsapMedia';
 import { useKineticText } from '../hooks/useKineticText';
 import { Section } from './ui/Section';
@@ -27,6 +32,27 @@ export function WhyHelixa() {
   const titleRef = useRef<HTMLSpanElement | null>(null);
 
   useKineticText(titleRef, { selector: '[data-kinetic-title]' });
+
+  // Overlap 1: isi section naik dari bawah menimpa ekor hero yang masih di
+  // layar (hero parallax menarik kontennya ke bawah pada rentang yang sama),
+  // sehingga dua lapis konten saling melintas saat menggulir.
+  useGsapMedia(MQ.motion, () => {
+    if (!rootRef.current) return;
+    gsap.fromTo(
+      rootRef.current,
+      { y: 150 },
+      {
+        y: 0,
+        ease: EASE.reveal,
+        scrollTrigger: {
+          trigger: rootRef.current,
+          start: 'top bottom',
+          end: 'top 35%',
+          scrub: true,
+        },
+      },
+    );
+  });
 
   useGsapMedia(MQ.motionFineWide, () => {
     if (!dnaRef.current) return;
@@ -67,13 +93,13 @@ export function WhyHelixa() {
 
         <RevealGroup
           selector="[data-spotlight-card]"
-          className="mt-14 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-gold-line bg-gold-line sm:grid-cols-2 lg:grid-cols-4"
+          className="mt-14 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
         >
           {WHY.items.map((item) => (
             <SpotlightCard
               key={item.number}
               as="div"
-              className="flex flex-col gap-4 border-0 bg-surface p-7 lg:p-8"
+              className="flex flex-col gap-4 p-7 lg:p-8"
             >
               <span className="font-mono text-[0.75rem] tracking-[0.18em] text-gold">
                 {item.number}

@@ -55,8 +55,15 @@ export function useMagnetic<T extends HTMLElement>(enabled = true) {
         yTo(0);
         return;
       }
-      xTo(dx * CURSOR.magneticStrength);
-      yTo(dy * CURSOR.magneticStrength);
+      // Pergeseran dibatasi dua lapis. Pertama, proporsional terhadap ukuran
+      // elemen: tombol kecil tidak boleh melesat sejauh kartu besar. Kedua,
+      // pagar keras `magneticMax`. Tanpa pagar ini, mengarahkan kursor ke tepi
+      // tombol yang lebarnya 150px bisa menggesernya 20-30px — cukup untuk
+      // menabrak tombol di sebelahnya.
+      const cap = Math.min(Math.max(rect.width, rect.height) * 0.12, CURSOR.magneticMax);
+      const pull = (v: number) => Math.max(-cap, Math.min(cap, v * CURSOR.magneticStrength));
+      xTo(pull(dx));
+      yTo(pull(dy));
     };
 
     const onLeave = () => {

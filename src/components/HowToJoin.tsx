@@ -11,7 +11,7 @@
  */
 import { useRef } from 'react';
 import { gsap } from '../lib/gsap';
-import { MQ, PARALLAX } from '../lib/motion';
+import { EASE, MQ, PARALLAX } from '../lib/motion';
 import { useGsapMedia } from '../hooks/useGsapMedia';
 import { Section } from './ui/Section';
 import { Eyebrow } from './ui/Eyebrow';
@@ -70,6 +70,27 @@ export function HowToJoin() {
         scrub: true,
       },
     });
+  });
+
+  // Overlap 2: isi section naik dari bawah menimpa ekor Perdana yang masih
+  // terlihat di layar. Perbatasan antar section terasa seperti dua lapisan
+  // yang saling melintas, bukan sekadar potongan yang bertumpuk.
+  useGsapMedia(MQ.motion, () => {
+    if (!rootRef.current) return;
+    gsap.fromTo(
+      rootRef.current,
+      { y: 150 },
+      {
+        y: 0,
+        ease: EASE.reveal,
+        scrollTrigger: {
+          trigger: rootRef.current,
+          start: 'top bottom',
+          end: 'top 35%',
+          scrub: true,
+        },
+      },
+    );
   });
 
   return (

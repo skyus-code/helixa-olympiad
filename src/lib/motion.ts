@@ -80,8 +80,16 @@ export const CURSOR = {
   /** Radius cincin saat idle / saat magnet bekerja. */
   sizeIdle: 14,
   sizeActive: 44,
-  /** Jarak-pointer dianggap "dekat" untuk memicu magnet (px). */
-  magneticRadius: 110,
+  /**
+   * Jarak-pointer dianggap "dekat" untuk memicu magnet (px).
+   *
+   * Nilai ini sengaja dijaga ketat. Kalau terlalu lebar, tombol yang
+   * berdekatan ikut tertarik saat kursor lewat di antara keduanya dan terasa
+   * seperti saling menabrak.
+   */
+  magneticRadius: 90,
   /** Proporsi tarikan magnet terhadap jarak. 1 = mengikuti penuh. */
-  magneticStrength: 0.32,
+  magneticStrength: 0.2,
+  /** Batas pergeseran magnet dalam piksel (per sumbu), lihat useMagnetic. */
+  magneticMax: 10,
 } as const;

@@ -7,7 +7,11 @@
  *
  * Nilai placeholder memakai font mono agar jelas berbeda dari data nyata:
  * pembaca langsung tahu mana yang masih harus diisi, tanpa perlu warna merah
- * yang Alamosakir dengan palet.
+ * yang bentrok dengan palet.
+ *
+ * Sama seperti kartu "Kenapa Helixa", daftar ini tidak lagi dibungkus panel
+ * emas. Setiap sel berdiri sendiri dengan border dan permukaan `bg-surface`
+ * sendiri, dipisahkan `gap-3`.
  */
 import { useRef } from 'react';
 import { Section } from './ui/Section';
@@ -43,13 +47,13 @@ export function PerdanaInfo() {
 
         <RevealGroup
           selector="[data-perdana-row]"
-          className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-gold-line bg-gold-line sm:grid-cols-2"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-2"
         >
           {PERDANA.details.map((d) => (
             <div
               key={d.label}
               data-perdana-row
-              className="flex flex-col gap-2 bg-surface p-6 transition-colors duration-300 ease-out hover:bg-ink/60"
+              className="flex flex-col gap-2 rounded-2xl border border-gold-line bg-surface p-6 transition-colors duration-300 ease-out hover:border-gold-line-strong hover:bg-ink/60"
             >
               <dt className="font-mono text-[0.6875rem] tracking-[0.18em] text-bone-dim uppercase">
                 {d.label}
