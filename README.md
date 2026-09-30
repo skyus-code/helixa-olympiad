@@ -29,7 +29,7 @@ npm run build && npm run preview -- --port 4200 --strictPort
 
 # terminal 2
 npm run check:responsive   # 11 viewport: overflow, teks terpotong, target sentuh
-npm run check:verify       # 81 cek perilaku & animasi
+npm run check:verify       # 84 cek perilaku & animasi
 ```
 
 Keduanya menerima URL sebagai argumen pertama, default `http://localhost:5173/`:
@@ -57,7 +57,7 @@ berubah, piksel yang benar-benar tergambar.
 4. **FAQ** — `height: auto` GSAP, rekam tinggi per frame, `inert`, satu-buka
 5. **WebGL** — canvas, konteks, fade-in, dan mesh benar-benar memberi piksel lewat selisih
    tangkapan layar
-6. **Kursor kustom** — cincin 14px → 44px mengikuti pointer; titik selalu tepat di pusat cincin
+6. **Kursor kustom** — dot menempel tepat di posisi pointer (tanpa lerp); cincin 14px → 44px mengejar di belakangnya
 7. **Magnetic pull** — tarikan dibatasi (proporsional ukuran + pagar 10px), elemen kembali ke tempat
 8. **Scroll overlap** — konten section naik menimpa ekor section sebelumnya saat menggulir
    (Kenapa → menutupi ekor Hero, Cara Ikut → menutupi ekor Perdana)
@@ -121,7 +121,7 @@ Helixa Olympiad/
 ├─ public/favicon.svg      # ikon emas, SVG tulen
 ├─ scripts/
 │  ├─ audit.mjs            # 11 viewport + deteksi overflow / teks terpotong / target sentuh
-│  └─ verify.mjs           # 81 cek perilaku & animasi (14 bagian)
+│  └─ verify.mjs           # 84 cek perilaku & animasi (14 bagian)
 └─ src/
    ├─ main.tsx
    ├─ App.tsx
@@ -139,7 +139,7 @@ Helixa Olympiad/
    ├─ three/
    │  └─ helixScene.ts     # mesh heliks + satelit + serbuk partikel, tilting kursor, timing rAF manual
    └─ components/
-      ├─ CursorLayer.tsx   # cincin emas tipis + titik (titik mengikuti pusat cincin)
+      ├─ CursorLayer.tsx   # cincin emas tipis + dot (dot menempel di posisi pointer, cincin ngejar)
       ├─ HeroCanvas.tsx    # canvas WebGL, lazy, gated ready && inView
       ├─ Navbar.tsx
       ├─ Hero.tsx
@@ -314,10 +314,13 @@ membaca kalimat normal, bukan huruf demi huruf.
 
 ### Kursor kustom
 
-Cincin emas tipis + titik. Ukuran 14px diam → 44px saat ada target hover. Posisi titik tidak
-dieranimasikan sendiri: setiap kali cincin bergerak, posisi cincin disalin ke titik lewat
-`onUpdate` dari `gsap.quickTo` cincin. Hasilnya titik **selalu berada tepat di pusat cincin**
-sekalipun cincin masih "mengejar" pointer — dua lapisan itu tidak pernah bisa berpisah.
+Cincin emas tipis + dot. Ukuran ring 14px diam → 44px saat ada target hover. Dot menempel
+**tepat di posisi pointer**: posisinya ditulis langsung ke `style.transform` (`translate3d`)
+di frame yang sama dengan `pointermove`, tanpa lerp dan tanpa tween gsap — `gsap.quickSetter`
+terbukti tidak menulis apa pun di target ini, dan lerp apa pun membuat dot tertinggal atau
+menyembul keluar. Cincin tetap mengejar pointer lewat `gsap.quickTo` (`0.45s`, `power3.out`),
+sehingga saat gerak cepat dot sudah sampai duluan dan cincin menyusul. Dua lapisan itu sengaja
+**boleh berpisah saat bergerak cepat**, mengikuti pola situs premium.
 
 Didaftarkan ke `<body>` dengan `position: fixed` + `pointer-events: none`, sehingga tidak
 pernah jadi blocker klik atau ikut ter-scroll. Element `<html>` diberi `data-custom-cursor="on"`
@@ -468,7 +471,7 @@ Semua diukur terhadap **production build** (`npm run build` → `npm run preview
 
 Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 
-**`verify.mjs` — 81/81 cek lulus** terhadap build yang sama. Ringkasan bagian:
+**`verify.mjs` — 84/84 cek lulus** terhadap build yang sama. Ringkasan bagian:
 
 | Bagian | Yang dibuktikan |
 |---|---|
@@ -477,7 +480,7 @@ Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 | 3 | 28 elemen reveal, awalnya `opacity: 0` di bawah fold, 0 tersisa tersembunyi |
 | 4 | 7 tinggi berbeda dan monoton saat accordion (bukan lompat), `inert` tepat |
 | 5 | Canvas 1440×900, `opacity: 0.996`, mesh menambah **~48 kB** piksel PNG |
-| 6 | Cincin 44px saat ada target, mengikuti pointer (700,400) → (300,250) |
+| 6 | Cincin 44px saat ada target, mengikuti pointer (700,400) → (300,250); dot menempel tepat di posisi pointer (lompat 640,430 → 120,310 seketika) sementara cincin tertinggal |
 | 7 | Magnet (0,0) → (6.0,0) — tarikan 20% + pembatas, kembali tepat ke (0.00, 0.00) |
 | 8 | `--mx` 210px, `--my` 30px, gradient radial di `::before` |
 | 9 | `scaleX` 0.00 → 1.00 mengikuti scroll |

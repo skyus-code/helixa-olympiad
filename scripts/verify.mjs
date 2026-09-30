@@ -706,6 +706,40 @@ console.log('\n=== 6. KURSOR KUSTOM ===');
   })()`);
   check('Titik kursor terlihat saat pointer bergerak', dot.opacity > 0.8,
     'opacity=' + dot.opacity);
+
+  // Inti perilaku: titik melekat TEPAT di posisi pointer (tanpa lerp),
+  // cincin mengejar di belakangnya. Kalau titik ikut dilerp, ia tertinggal
+  // dari kursor asli; kalau ia diberi lerp lebih cepat dari cincin, ia
+  // menyembul keluar. Keduanya sama-sama salah — titik harus menempel.
+  const precision = await evalJs(String.raw`(async () => {
+    const pick = (test) => [...document.querySelectorAll('.fixed.rounded-full')]
+      .find(e => test(e.className));
+    const ring = pick(c => c.includes('border'));
+    const dotEl = pick(c => c.includes('bg-'));
+    const fire = (x, y) => window.dispatchEvent(new PointerEvent('pointermove', {
+      clientX: x, clientY: y, bubbles: true, pointerType: 'mouse' }));
+    fire(640, 430);
+    await new Promise(r => setTimeout(r, 700));
+    const seatedDot = window.__xform(dotEl);
+    const seatedRing = window.__xform(ring);
+    fire(120, 310); // lompatan jauh: dot harus pindah seketika, ring belum
+    await new Promise(r => setTimeout(r, 20));
+    const nowDot = window.__xform(dotEl);
+    const nowRing = window.__xform(ring);
+    const near = (p, x, y) => Math.abs(p.x - x) < 0.5 && Math.abs(p.y - y) < 0.5;
+    return {
+      dotSeated: near(seatedDot, 640, 430),
+      ringSeated: near(seatedRing, 640, 430),
+      dotAtPointer: near(nowDot, 120, 310),
+      ringLagging: Math.abs(nowRing.x - 120) > 5 || Math.abs(nowRing.y - 310) > 5,
+      dotNow: { x: Math.round(nowDot.x), y: Math.round(nowDot.y) },
+    };
+  })()`);
+  check('Titik diam tepat di posisi pointer', !!precision.dotSeated,
+    'dot=(' + precision.dotNow.x + ',' + precision.dotNow.y + ')');
+  check('Titik memindahkan diri seketika saat kursor lompat', !!precision.dotAtPointer,
+    'dot=(' + precision.dotNow.x + ',' + precision.dotNow.y + ')');
+  check('Cincin tertinggal mengejar di belakang titik', !!precision.ringLagging);
 }
 
 console.log('\n=== 7. MAGNETIC PULL ===');

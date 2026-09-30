@@ -51,24 +51,27 @@ export function CursorLayer() {
 
       root.setAttribute('data-custom-cursor', 'on');
 
-      // Titik dalam harus selalu tepat di pusat cincin. Kalau titik diberi
-      // lerp sendiri yang lebih cepat daripada cincin, ia akan menyembul
-      // keluar dari lingkaran saat kursor bergerak cepat. Solusinya: posisi
-      // titik disalin dari posisi cincin — yang sedang dilerp — setiap kali
-      // cincin bergerak, sehingga keduanya tidak pernah bisa berpisah.
-      const alignDot = () => {
-        dot.style.transform =
-          'translate(' + gsap.getProperty(ring, 'x') + 'px, ' + gsap.getProperty(ring, 'y') + 'px)';
+      // Titik dalam melekat TEPAT di posisi pointer (tanpa lerp), cincin yang
+      // mengejar di belakangnya. Dulu posisi titik disalin dari posisi cincin
+      // supaya tidak pernah berpisah — tapi itu membuat titik ikut "ngejar"
+      // bersama cincin dan terasa lambat.
+      //
+      // Posisi titik ditulis LANGSUNG ke style.transform (bukan lewat tween
+      // gsap): gsap.quickSetter terbukti tidak menulis apa pun di target ini,
+      // dan tween apa pun akan menunda pindahnya ke frame berikutnya. Tulis
+      // langsung di frame yang sama sehingga titik mustahil tertinggal dari
+      // kursor asli. translate3d(z=0) ter-kompile ke matrix 2D biasa, jadi
+      // posisinya tetap terbaca probe verifikasi.
+      const placeDot = (x: number, y: number) => {
+        dot.style.transform = 'translate3d(' + x + 'px,' + y + 'px,0)';
       };
       const ringX = gsap.quickTo(ring, 'x', {
         duration: DUR.cursorFollow,
         ease: 'power3.out',
-        onUpdate: alignDot,
       });
       const ringY = gsap.quickTo(ring, 'y', {
         duration: DUR.cursorFollow,
         ease: 'power3.out',
-        onUpdate: alignDot,
       });
 
       let visible = false;
@@ -84,6 +87,7 @@ export function CursorLayer() {
 
       const onMove = (e: PointerEvent) => {
         show();
+        placeDot(e.clientX, e.clientY);
         ringX(e.clientX);
         ringY(e.clientY);
       };
@@ -130,7 +134,7 @@ export function CursorLayer() {
       // Kondisi awal: sembunyikan, dan letakkan di tengah layar supaya tidak
       // berkedip di pojok kiri atas saat halaman dimuat.
       gsap.set([dot, ring], { autoAlpha: 0 });
-      gsap.set(dot, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
+      placeDot(window.innerWidth / 2, window.innerHeight / 2);
       gsap.set(ring, { x: window.innerWidth / 2, y: window.innerHeight / 2 });
     };
 
