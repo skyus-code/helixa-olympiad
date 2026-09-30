@@ -1,50 +1,54 @@
-﻿import { Section } from './ui/Section';
-import { Reveal } from './ui/Reveal';
+﻿/**
+ * "Juri & Mitra" - tiga kartu placeholder dengan monogram emas.
+ *
+ * Monogram memakai inisial dalam cincin emas, bukan gambar. Semua identitas
+ * masih placeholder, jadi tidak ada aset gambar yang perlu dibuat sekarang
+ * dan tidak ada foto orang fiktif yang bisa disalahartikan sebagai nyata.
+ */
+import { Section } from './ui/Section';
 import { Eyebrow } from './ui/Eyebrow';
-import { Placeholder } from './ui/Placeholder';
+import { RevealGroup } from './ui/Reveal';
+import { SpotlightCard } from './ui/SpotlightCard';
 import { JUDGES } from '../content';
 
 export function JudgesPartners() {
   return (
-    <Section id="juri-mitra">
-      <Reveal className="max-w-[38rem]">
-        <Eyebrow>{JUDGES.eyebrow}</Eyebrow>
-        <h2 className="mt-5 font-display text-[clamp(1.875rem,4vw,3rem)] leading-[1.08] font-semibold tracking-[-0.015em] text-bone">
-          {JUDGES.title}
-        </h2>
-        <p className="mt-5 text-pretty text-bone-dim">{JUDGES.lead}</p>
-      </Reveal>
+    <Section id="juri">
+      <Eyebrow>{JUDGES.eyebrow}</Eyebrow>
 
-      <ul className="mt-14 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:mt-18 lg:grid-cols-3">
-        {JUDGES.items.map((person, i) => (
-          <Reveal
-            as="li"
-            key={`${person.kind}-${i}`}
-            delay={i * 80}
-            className="card-hover flex h-full flex-col items-center rounded-2xl border border-gold-line bg-surface p-7 text-center lg:p-8"
-          >
-            {/* Avatar berupa lingkaran monogram emas, bukan foto */}
+      <h2 className="mt-5 max-w-[18ch] font-display text-[clamp(2.25rem,6vw,3.75rem)] leading-[1.05] font-semibold tracking-[-0.015em] text-bone">
+        {JUDGES.title}
+      </h2>
+
+      <p className="mt-5 max-w-[46ch] text-bone-dim">{JUDGES.lead}</p>
+
+      <RevealGroup
+        selector="[data-spotlight-card]"
+        className="mt-14 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
+      >
+        {JUDGES.items.map((person) => (
+          <SpotlightCard key={person.monogram} as="div" className="flex flex-col gap-5 p-7">
             <span
               aria-hidden="true"
-              className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full border border-gold/30 bg-gold/6 font-display text-2xl font-semibold text-gold"
+              className="flex h-14 w-14 items-center justify-center rounded-full border border-gold-line-strong font-display text-2xl font-semibold text-gold"
             >
               {person.monogram}
             </span>
 
-            <p className="mt-6 text-[0.6875rem] font-semibold tracking-[0.18em] text-gold/70 uppercase">
-              {person.kind === 'juri' ? 'Juri' : 'Mitra'}
-            </p>
-
-            <h3 className="mt-3 font-display text-[1.75rem] leading-[1.15] font-semibold text-balance text-bone">
-              <Placeholder>{person.name}</Placeholder>
-            </h3>
-
-            <p className="mt-2.5 text-[0.875rem] leading-1.7 text-pretty text-bone-dim">
-              <Placeholder>{person.role}</Placeholder>
-            </p>
-          </Reveal>
+            <div className="flex flex-col gap-2">
+              <span className="font-mono text-[0.6875rem] tracking-[0.18em] text-bone-dim uppercase">
+                {person.kind}
+              </span>
+              <h3 className="text-[1.0625rem] leading-snug font-semibold text-bone">
+                {person.name}
+              </h3>
+              <p className="font-mono text-[0.8125rem] leading-relaxed text-gold/70">
+                {person.role}
+              </p>
+            </div>
+          </SpotlightCard>
         ))}
-      </ul>
+      </RevealGroup>
     </Section>
   );
 }

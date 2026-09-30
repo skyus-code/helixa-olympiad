@@ -1,4 +1,15 @@
-import { MotionProvider } from './components/MotionProvider';
+/**
+ * Komposisi aplikasi.
+ *
+ * Urutan provider itu penting:
+ *   SmoothScrollProvider  -> membuat Lenis dan menyinkronkan ScrollTrigger.
+ *                           Harus di luar supaya komponen anak (mis. Navbar
+ *                           yang menghentikan Lenis saat menu terbuka) bisa
+ *                           mengakses instance-nya.
+ *   GrainOverlay          -> dekoratif, paling atas, pointer-events none.
+ *   CursorLayer           -> kursor kustom, hanya di pointer presisi.
+ */
+import { SmoothScrollProvider } from './hooks/useSmoothScroll';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { WhyHelixa } from './components/WhyHelixa';
@@ -7,23 +18,23 @@ import { HowToJoin } from './components/HowToJoin';
 import { JudgesPartners } from './components/JudgesPartners';
 import { RulesTransparency } from './components/RulesTransparency';
 import { Faq } from './components/Faq';
-import { ClosingCta } from './components/ClosingCta';
-import { Footer } from './components/Footer';
+import { ClosingCta, Footer } from './components/ClosingCta';
+import { CursorLayer } from './components/CursorLayer';
 import { GrainOverlay } from './components/ornaments/GrainOverlay';
 
 export default function App() {
   return (
-    <MotionProvider>
+    <SmoothScrollProvider>
       <a
         href="#tentang"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-100 focus:inline-flex focus:min-h-11 focus:items-center focus:rounded-full focus:border focus:border-gold/40 focus:bg-surface focus:px-5 focus:text-sm focus:font-medium focus:text-bone"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[200] focus:rounded-full focus:border focus:border-gold focus:bg-ink focus:px-5 focus:py-3 focus:text-sm focus:text-bone"
       >
         Lewati ke konten
       </a>
 
       <Navbar />
 
-      <main className="relative">
+      <main id="top">
         <Hero />
         <WhyHelixa />
         <PerdanaInfo />
@@ -36,6 +47,7 @@ export default function App() {
 
       <Footer />
       <GrainOverlay />
-    </MotionProvider>
+      <CursorLayer />
+    </SmoothScrollProvider>
   );
 }

@@ -1,46 +1,70 @@
+/**
+ * "Helixa Olympiad Perdana" - daftar detail dalam bentuk definition list.
+ *
+ * Kenapa bukan <table>: tabel memaksa lebar minimum berdasarkan isi terpanjang
+ * dan pada 320px menghasilkan scroll horizontal. <dl>/<dt>/<dd> membungkus
+ * teks dengan natural, dan di >=768px cukup dua kolom lewat CSS grid.
+ *
+ * Nilai placeholder memakai font mono agar jelas berbeda dari data nyata:
+ * pembaca langsung tahu mana yang masih harus diisi, tanpa perlu warna merah
+ * yang Alamosakir dengan palet.
+ */
+import { useRef } from 'react';
 import { Section } from './ui/Section';
-import { Reveal } from './ui/Reveal';
 import { Eyebrow } from './ui/Eyebrow';
-import { Placeholder } from './ui/Placeholder';
+import { RevealGroup } from './ui/Reveal';
 import { PrimaryButton } from './ui/Buttons';
 import { PERDANA } from '../content';
 
 export function PerdanaInfo() {
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
   return (
     <Section id="perdana">
-      <div className="grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-20">
-        <Reveal>
+      <div ref={rootRef} className="grid gap-12 lg:grid-cols-[1fr_1.05fr] lg:gap-16">
+        <div>
           <Eyebrow>{PERDANA.eyebrow}</Eyebrow>
-          <h2 className="mt-5 font-display text-[clamp(1.875rem,4vw,3rem)] leading-[1.08] font-semibold tracking-[-0.015em] text-balance text-bone">
-            {PERDANA.title}
-          </h2>
-          <p className="mt-5 text-pretty text-bone-dim">{PERDANA.lead}</p>
+
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <h2 className="font-display text-[clamp(2.25rem,6vw,3.5rem)] leading-[1.05] font-semibold tracking-[-0.015em] text-bone">
+              {PERDANA.title}
+            </h2>
+            <span className="rounded-full border border-gold-line-strong bg-gold/10 px-3 py-1 font-mono text-[0.6875rem] tracking-[0.18em] text-gold uppercase">
+              Gratis
+            </span>
+          </div>
+
+          <p className="mt-5 max-w-[44ch] text-bone-dim">{PERDANA.lead}</p>
+
           <div className="mt-9">
             <PrimaryButton href={PERDANA.ctaHref}>{PERDANA.ctaLabel}</PrimaryButton>
           </div>
-        </Reveal>
+        </div>
 
-        {/* Daftar berlabel bertumpuk di ponsel, dua kolom label-nilai di >= 768px.
-            Bukan tabel, jadi tidak pernah memaksa scroll horizontal. */}
-        <Reveal delay={80}>
-          <dl className="rounded-2xl border border-gold-line bg-surface p-6 sm:p-8">
-            {PERDANA.details.map((row, i) => (
-              <div
-                key={row.label}
-                className={`grid grid-cols-1 gap-x-8 gap-y-1.5 py-4 md:grid-cols-[minmax(0,9rem)_1fr] md:gap-y-0 md:py-4 ${
-                  i > 0 ? 'border-t border-gold-line' : ''
-                }`}
+        <RevealGroup
+          selector="[data-perdana-row]"
+          className="grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-gold-line bg-gold-line sm:grid-cols-2"
+        >
+          {PERDANA.details.map((d) => (
+            <div
+              key={d.label}
+              data-perdana-row
+              className="flex flex-col gap-2 bg-surface p-6 transition-colors duration-300 ease-out hover:bg-ink/60"
+            >
+              <dt className="font-mono text-[0.6875rem] tracking-[0.18em] text-bone-dim uppercase">
+                {d.label}
+              </dt>
+              <dd
+                className={
+                  'text-[0.9375rem] leading-relaxed ' +
+                  (d.placeholder ? 'font-mono text-gold/80' : 'text-bone')
+                }
               >
-                <dt className="text-[0.75rem] font-semibold tracking-[0.14em] text-gold/80 uppercase md:pt-1">
-                  {row.label}
-                </dt>
-                <dd className="text-[0.9375rem] leading-1.7 text-pretty text-bone">
-                  {row.placeholder ? <Placeholder>{row.value}</Placeholder> : row.value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-        </Reveal>
+                {d.value}
+              </dd>
+            </div>
+          ))}
+        </RevealGroup>
       </div>
     </Section>
   );

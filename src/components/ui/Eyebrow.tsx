@@ -1,19 +1,17 @@
-type EyebrowProps = {
-  children: string;
-  className?: string;
-  as?: 'p' | 'span' | 'div';
-};
-
 /**
- * Label kecil: Manrope 12–13px, huruf kapital, letter-spacing 0.18em, warna emas.
+ * Label kecil di atas judul section.
+ *
+ * Font mono + letter-spacing lebar, huruf kapital, warna emas. Monospace
+ * dipilih karena font mono memberi kesan "label data", berbeda dari
+ * heading serif dan body sans.
  */
-export function Eyebrow({ children, className = '', as = 'p' }: EyebrowProps) {
-  const Tag = as;
+export function Eyebrow({ children, className = '' }: { children: string; className?: string }) {
   return (
-    <Tag
-      className={`text-[0.75rem] font-semibold tracking-[0.18em] text-gold uppercase sm:text-[0.8125rem] ${className}`}
-    >
-      {children}
-    </Tag>
+    <p className={'eyebrow ' + className}>
+      <span className="inline-flex items-center gap-2">
+        <span aria-hidden="true" className="inline-block h-px w-6 bg-gold/50" />
+        {children}
+      </span>
+    </p>
   );
 }

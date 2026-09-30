@@ -1,33 +1,44 @@
 @import 'tailwindcss';
 
+/* Tailwind v4 memindai proyek untuk menemukan nama kelas. Kalau `dist/` ikut
+   dipindai, setiap build akan membaca output build sebelumnya: kumpulan kelas
+   ikut berubah tiap build, CSS jadi tidak reproducible, dan build di CI bisa
+   berbeda dari build lokal -- sehingga kelas yang kebetulan "ditemukan" di
+   lokal hilang di produksi dan halaman ikut rusak. `screenshots/` juga memuat
+   nama kelas dari audit, jadi ikut dikecualikan. */
+@source not '../dist';
+@source not '../screenshots';
+
 /* ==========================================================================
    DESIGN TOKENS — Helixa Olympiad
-   Dominan hitam ~80% · emas ~10% aksen · gading untuk teks.
+   Obsidian ~80% · gading ~10% · liquid gold ~10%
    ========================================================================== */
 
 @theme {
-  /* Hitam */
+  /* Obsidian */
   --color-ink: #0a0a0b;
   --color-ink-deep: #060607;
   --color-surface: #121214;
 
-  /* Emas */
+  /* Liquid gold */
+  --color-gold-bright: #f6e7b4;
   --color-gold: #d4af37;
-  --color-gold-light: #f6e7b4;
-  --color-gold-dark: #a17c1b;
+  --color-gold-bronze: #996515;
 
   /* Teks */
   --color-bone: #f4efe4;
-  --color-bone-dim: #a39e92;
+  --color-bone-dim: #8e8e93;
 
   /* Garis / border */
   --color-gold-line: rgba(212, 175, 55, 0.16);
+  --color-gold-line-strong: rgba(212, 175, 55, 0.34);
 
   /* Tipografi */
   --font-display: 'Cormorant Garamond', 'Iowan Old Style', 'Times New Roman', serif;
   --font-sans: 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Space Mono', ui-monospace, 'SFMono-Regular', 'Cascadia Mono', monospace;
 
-  /* Gerak */
+  /* Gerak (CSS saja; timing GSAP ada di src/lib/motion.ts) */
   --ease-elegant: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -44,8 +55,8 @@
 
   html {
     -webkit-text-size-adjust: 100%;
-    scroll-behavior: smooth;
-    /* Cegah scroll horizontal dari elemen dekoratif, tanpa merusak position:sticky */
+    /* `clip` bukan `hidden`: `hidden` pada html membuat position:sticky dan
+       scrollIntoView ikut gagal di sebagian browser. */
     overflow-x: clip;
   }
 
@@ -68,13 +79,12 @@
     }
   }
 
-  /* Ikon dekoratif tidak pernah boleh jadi target sentuh/seleksi */
+  /* Ikon dekoratif tidak pernah jadi target sentuh/seleksi */
   svg[aria-hidden='true'] {
     pointer-events: none;
     user-select: none;
   }
 
-  /* Fokus keyboard: cincin emas tipis, konsisten dan terlihat */
   :focus-visible {
     outline: 2px solid var(--color-gold);
     outline-offset: 3px;
@@ -83,7 +93,29 @@
 
   ::selection {
     background-color: rgba(212, 175, 55, 0.28);
-    color: var(--color-gold-light);
+    color: var(--color-gold-bright);
+  }
+
+  /* Kursor kustom hanya aktif bila perangkat benar-benar punya pointer presisi.
+     Tanpa ini, mouse users akan kehilangan penanda saat JS gagal. */
+  @media (hover: hover) and (pointer: fine) {
+    html[data-custom-cursor='on'],
+    html[data-custom-cursor='on'] * {
+      cursor: none !important;
+    }
+  }
+
+  /* Aminkan tinggi layar pendek: hero tidak boleh memaksa 100svh
+     di ponsel yang dimiringkan. */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .hero-section {
+      min-height: auto !important;
+      padding-block: 6.5rem 4rem;
+    }
+
+    .hero-scroll-hint {
+      display: none;
+    }
   }
 }
 
@@ -91,22 +123,37 @@
    UTILITAS
    ========================================================================== */
 
-/* Gradasi emas — HANYA untuk: satu kata di headline hero, tombol utama, garis dekoratif */
+/* ---- Liquid gold shimmer ------------------------------------------------ */
+/* 135deg, tiga stop: bright -> metallic -> bronze. */
 .text-gold-gradient {
-  background-image: linear-gradient(135deg, #f6e7b4 0%, #d4af37 45%, #a17c1b 100%);
+  background-image: linear-gradient(135deg, #f6e7b4 0%, #d4af37 50%, #996515 100%);
+  background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  /* Cegah tepi pudar saat zoom teks 200% */
   -webkit-text-fill-color: transparent;
   padding-right: 0.06em;
 }
 
 .bg-gold-gradient {
-  background-image: linear-gradient(135deg, #f6e7b4 0%, #d4af37 45%, #a17c1b 100%);
+  background-image: linear-gradient(135deg, #f6e7b4 0%, #d4af37 50%, #996515 100%);
+  background-size: 200% 100%;
 }
 
-/* Garis dekoratif emas tipis */
+/* Kilau diam secara default; hanya berpindah saat di-hover */
+@media (hover: hover) and (pointer: fine) {
+  .text-gold-gradient:hover,
+  .bg-gold-gradient:hover {
+    background-position: 100% 50%;
+  }
+}
+
+.text-gold-gradient,
+.bg-gold-gradient {
+  transition: background-position var(--dur-hover, 700ms) var(--ease-elegant);
+}
+
+/* ---- Garis dekoratif ----------------------------------------------------- */
 .gold-rule {
   background-image: linear-gradient(
     135deg,
@@ -118,10 +165,12 @@
   );
 }
 
-/* Pembungkus aman untuk konten + padding section */
+/* ---- Layout -------------------------------------------------------------- */
+/* --shell-max bisa ditimpa per section lewat style inline, supaya tidak
+   perlu kelas max-w-* yang akan saling bertabrakan dengan nilai di sini. */
 .shell {
   width: 100%;
-  max-width: 1120px;
+  max-width: var(--shell-max, 1120px);
   margin-inline: auto;
   padding-inline: 20px;
 }
@@ -132,56 +181,79 @@
   }
 }
 
-/* Pemisah antar section: garis emas tipis 1px, bukan blok kontras */
 .hairline {
   border-top: 1px solid var(--color-gold-line);
 }
 
-/* Konten revealed oleh IntersectionObserver */
-.reveal {
+/* ---- Eyebrow ------------------------------------------------------------- */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-gold);
+}
+
+/* ---- Card + spotlight tracker ------------------------------------------- */
+/* `--mx`/`--my` diisi JS dari koordinat pointer. Default di tengah supaya
+   kartu tidak terlihat "mati" sebelum kursor menyentuh. */
+.spotlight-card {
+  position: relative;
+  isolation: isolate;
+  --mx: 50%;
+  --my: 50%;
+  transition:
+    border-color var(--dur-hover, 300ms) ease-out,
+    box-shadow var(--dur-hover, 300ms) ease-out;
+}
+
+.spotlight-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle var(--spotlight-radius, 260px) at var(--mx) var(--my),
+    rgba(212, 175, 55, 0.14) 0%,
+    rgba(212, 175, 55, 0.05) 40%,
+    rgba(212, 175, 55, 0) 70%
+  );
   opacity: 0;
-  transform: translate3d(0, 24px, 0);
-  transition:
-    opacity 700ms var(--ease-elegant),
-    transform 700ms var(--ease-elegant);
-  transition-delay: var(--reveal-delay, 0ms);
-  will-change: opacity, transform;
-}
-
-.reveal[data-visible='true'] {
-  opacity: 1;
-  transform: translate3d(0, 0, 0);
-  will-change: auto;
-}
-
-/* Hover hanya di perangkat dengan pointer presisi (lihat juga @media di bawah) */
-.card-hover {
-  transition:
-    transform 300ms ease-out,
-    border-color 300ms ease-out,
-    box-shadow 300ms ease-out;
+  transition: opacity var(--dur-hover, 300ms) ease-out;
+  pointer-events: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .card-hover:hover {
+  .spotlight-card:hover {
+    border-color: var(--color-gold-line-strong);
     transform: translate3d(0, -4px, 0);
-    border-color: rgba(212, 175, 55, 0.34);
     box-shadow: 0 12px 40px -12px rgba(212, 175, 55, 0.25);
+  }
+
+  .spotlight-card:hover::before {
+    opacity: 1;
   }
 }
 
 @media (hover: none), (pointer: coarse) {
-  /* Pengganti hover untuk layar sentuh: :active ringan */
-  .card-hover:active {
+  .spotlight-card:active {
     transform: translate3d(0, -2px, 0);
-    border-color: rgba(212, 175, 55, 0.34);
+    border-color: var(--color-gold-line-strong);
   }
 }
 
-/* Tautan navbar: garis bawah emas tumbuh dari kiri */
+/* ---- Magnetic host ------------------------------------------------------- */
+/* JS menggeser elemen ini; transisi diverifikasi ulang tiap pointermove. */
+.magnetic {
+  will-change: transform;
+}
+
+/* ---- Navbar link: garis tumbuh dari tengah ke luar ------------------------ */
 .nav-link {
   position: relative;
-  transition: color 300ms ease-out;
+  transition: color var(--dur-hover, 300ms) ease-out;
 }
 
 .nav-link::after {
@@ -193,8 +265,9 @@
   width: 100%;
   background-color: var(--color-gold);
   transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 300ms ease-out;
+  /* Titik asal di tengah -> tumbuh ke kiri dan kanan, bukan dari kiri. */
+  transform-origin: center center;
+  transition: transform var(--dur-hover, 300ms) var(--ease-elegant);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -208,55 +281,133 @@
   transform: scaleX(1);
 }
 
-/* Tombol: state aktif untuk perangkat sentuh */
+/* ---- Tombol -------------------------------------------------------------- */
+.btn {
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform var(--dur-hover, 300ms) ease-out,
+    box-shadow var(--dur-hover, 300ms) ease-out,
+    border-color var(--dur-hover, 300ms) ease-out;
+}
+
 .btn:active {
   transform: scale(0.98);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .btn:hover {
-    transform: none;
+    box-shadow: 0 10px 34px -14px rgba(212, 175, 55, 0.45);
   }
 }
 
-/* Efek cahaya radial emas di atas hitam */
-.hero-glow {
-  background: radial-gradient(
-    ellipse 70% 55% at 50% 32%,
-    rgba(212, 175, 55, 0.16) 0%,
-    rgba(212, 175, 55, 0.06) 42%,
-    rgba(212, 175, 55, 0) 72%
-  );
+/* Kilau yang menyapu tombol utama, dipicu hover */
+.btn-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -120%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  pointer-events: none;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .btn-shimmer:hover::after {
+    animation: btn-sweep 900ms var(--ease-elegant);
+  }
+}
+
+@keyframes btn-sweep {
+  to {
+    left: 130%;
+  }
+}
+
+/* ---- Hero ambient glow (fallback mobile, tanpa WebGL) --------------------- */
+.hero-ambient {
+  background:
+    radial-gradient(ellipse 60% 50% at 50% 34%, rgba(212, 175, 55, 0.13) 0%, rgba(212, 175, 55, 0) 70%),
+    radial-gradient(ellipse 45% 38% at 78% 62%, rgba(153, 101, 21, 0.1) 0%, rgba(153, 101, 21, 0) 72%);
+  animation: ambient-drift 18s ease-in-out infinite alternate;
+}
+
+@keyframes ambient-drift {
+  from {
+    transform: translate3d(-1.5%, -1%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(1.5%, 1.5%, 0) scale(1.06);
+  }
+}
+
+/* ---- Kinetic typography: mask per baris ---------------------------------- */
+/* SplitText membungkus tiap baris di wrapper ber-overflow:hidden. Efeknya:
+  huruf naik dari dalam mask baris, bukan sekadar fade. */
+.kinetic-line {
+  overflow: hidden;
+  display: block;
+  padding-bottom: 0.08em;
+  margin-bottom: -0.08em;
+}
+
+/* ---- Grain: hilangkan kilau digital di atas gradient emas ----------------- */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: overlay;
+}
+
+/* ---- FAQ accordion ------------------------------------------------------- */
+/* Tinggi dikendalikan GSAP (height auto). Wrapper ini hanya menahan overflow.
+   Jawaban pertama dibiarkan terbuka oleh CSS supaya pengunjung dengan
+   JavaScript mati tetap membaca sesuatu, bukan lima pertanyaan tanpa isi. */
+.faq-body {
+  overflow: hidden;
+  height: 0;
+}
+
+.faq-item:first-child .faq-body {
+  height: auto;
+}
+
+
 /* ==========================================================================
-   ORIENTASI LANDSCAPE PADA PONSEL / LAYAR PENDEK
-   Hero tidak boleh memaksa 100svh jika tinggi layar < 500px.
+   KELAS LENIS
+   Tanpa blok ini, Lenis dan scroll native bisa saling berebut: `html.lenis`
+   butuh height auto supaya dokumen tetap bisa diukur Lenis, dan
+   `scroll-behavior` harus dimatikan agar tidak terjadi smooth ganda.
    ========================================================================== */
 
-@media (orientation: landscape) and (max-height: 500px) {
-  .hero-section {
-    min-height: auto !important;
-    padding-block: 6.5rem 4rem;
-  }
-
-  .hero-helix {
-    height: 120% !important;
-    max-height: none;
-  }
-
-  .hero-scroll-hint {
-    display: none;
-  }
+html.lenis,
+html.lenis body {
+  height: auto;
 }
 
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+
+.lenis.lenis-smooth [data-lenis-prevent] {
+  overscroll-behavior: contain;
+}
+
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
 /* ==========================================================================
-   REDUCED MOTION — matikan parallax & reveal, konten langsung tampil
+   REDUCED MOTION
+   Sesuai permintaan situs: nonaktifkan smooth scroll, WebGL, kursor, dan
+   seluruh animasi. Konten harus langsung terlihat dan bisa di-scroll normal.
    ========================================================================== */
 
 @media (prefers-reduced-motion: reduce) {
   html {
-    scroll-behavior: auto;
+    scroll-behavior: auto !important;
   }
 
   *,
@@ -268,8 +419,17 @@
     scroll-behavior: auto !important;
   }
 
-  .reveal {
+  /* Ambient drift dan shimmer tidak boleh jalan meski tanpa batas */
+  .hero-ambient,
+  .text-gold-gradient,
+  .bg-gold-gradient {
+    animation: none !important;
+    background-position: 50% 50% !important;
+  }
+
+  /* Jangan sampai ada elemen tersembunyi kalau GSAP gagal inisialisasi */
+  [data-kinetic] {
     opacity: 1 !important;
-    transform: none !important;
+    visibility: visible !important;
   }
 }

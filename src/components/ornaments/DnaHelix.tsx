@@ -1,63 +1,68 @@
-type DnaHelixProps = {
-  className?: string;
-};
-
 /**
- * Ornamen DNA double helix — dua untai sinusoidal yang saling berpelintir
- * dengan anak tangga penghubung. Murni SVG, tanpa gambar eksternal.
- * Digunakan di hero (desktop: sisi kanan, mobile: di belakang teks).
+ * Ornamen DNA — dua untai sinusoidal yang saling berpelintir.
+ *
+ * SVG murni, tanpa aset. Dipakai sebagai latar section "Kenapa Helixa" dan
+ * diberi parallax lewat ScrollTrigger (speed berbeda dari konten).
  */
-export function DnaHelix({ className = '' }: DnaHelixProps) {
-  const rungs = [30, 78, 126, 174, 222, 270, 318];
-
+export function DnaHelix({ className = '' }: { className?: string }) {
   return (
     <svg
       aria-hidden="true"
-      viewBox="0 0 240 400"
+      viewBox="0 0 200 420"
       fill="none"
-      preserveAspectRatio="xMidYMid meet"
       className={className}
+      preserveAspectRatio="xMidYMid meet"
     >
       <defs>
-        <linearGradient id="helix-strand" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#F6E7B4" stopOpacity="0.30" />
-          <stop offset="50%" stopColor="#D4AF37" stopOpacity="0.62" />
-          <stop offset="100%" stopColor="#A17C1B" stopOpacity="0.30" />
-        </linearGradient>
-        <linearGradient id="helix-rung" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.10" />
-          <stop offset="50%" stopColor="#D4AF37" stopOpacity="0.42" />
-          <stop offset="100%" stopColor="#D4AF37" stopOpacity="0.10" />
+        <linearGradient id="dna-strand" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#F6E7B4" stopOpacity="0.5" />
+          <stop offset="45%" stopColor="#D4AF37" stopOpacity="0.34" />
+          <stop offset="100%" stopColor="#996515" stopOpacity="0.12" />
         </linearGradient>
       </defs>
 
-      {/* Unting A */}
-      <path
-        d="M30 0 C170 45 170 105 30 150 C-110 195 -110 255 30 300 C170 345 170 380 30 400"
-        stroke="url(#helix-strand)"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
-      {/* Unting B (cermin) */}
-      <path
-        d="M210 0 C70 45 70 105 210 150 C350 195 350 255 210 300 C70 345 70 380 210 400"
-        stroke="url(#helix-strand)"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-      />
+      {/* Anak tangga: pasangan basa */}
+      {Array.from({ length: 16 }, (_, i) => {
+        const t = i / 15;
+        const y = 20 + t * 380;
+        const spread = Math.sin(t * Math.PI) * 58 + 8;
+        return (
+          <line
+            key={`rung-${i}`}
+            x1={100 - spread}
+            y1={y}
+            x2={100 + spread}
+            y2={y}
+            stroke="#D4AF37"
+            strokeWidth="0.75"
+            strokeOpacity={0.1 + Math.sin(t * Math.PI) * 0.14}
+          />
+        );
+      })}
 
-      {/* Anak tangga penghubung */}
-      <g stroke="url(#helix-rung)" strokeWidth="1" strokeLinecap="round">
-        {rungs.map((y) => (
-          <line key={`a-${y}`} x1="24" y1={y} x2="216" y2={y} />
-        ))}
-      </g>
-
-      {/* Simpul kecil pada dua titik fokus, memberi kesan "pelintir" */}
-      <g fill="#D4AF37">
-        <circle cx="150" cy="112" r="2.6" opacity="0.5" />
-        <circle cx="90" cy="288" r="2.6" opacity="0.5" />
-      </g>
+      {/* Dua untai */}
+      {[
+        Array.from({ length: 61 }, (_, i) => {
+          const t = i / 60;
+          const y = 20 + t * 380;
+          const x = 100 + Math.sin(t * Math.PI * 5) * (Math.sin(t * Math.PI) * 58 + 8);
+          return [x, y] as const;
+        }),
+        Array.from({ length: 61 }, (_, i) => {
+          const t = i / 60;
+          const y = 20 + t * 380;
+          const x = 100 - Math.sin(t * Math.PI * 5) * (Math.sin(t * Math.PI) * 58 + 8);
+          return [x, y] as const;
+        }),
+      ].map((pts, s) => (
+        <polyline
+          key={`strand-${s}`}
+          points={pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}
+          stroke="url(#dna-strand)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+      ))}
     </svg>
   );
 }

@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import { useMagnetic, registerHoverTarget } from '../../hooks/useMagnetic';
+import { useIsoLayoutEffect } from '../../hooks/useGsapMedia';
 
 function ArrowRight({ className = '' }: { className?: string }) {
   return (
@@ -29,34 +31,75 @@ type ButtonProps = {
 };
 
 /**
- * Tombol utama — satu-satunya tempat gradasi emas dipakai pada UI (selain satu
- * kata di headline hero dan garis dekoratif).
+ * Pembungkus magnetic pull sekaligus penanda bagi kursor kustom.
+ *
+ * Host magnet adalah span ini sendiri, bukan elemen anak, sehingga transform
+ * tarikan bekerja pada satu elemen saja dan tidak berlapis dengan transform
+ * scale milik tombol saat ditekan.
+ */
+export function Magnetic({
+  children,
+  className = '',
+  enabled = true,
+}: {
+  children: ReactNode;
+  className?: string;
+  enabled?: boolean;
+}) {
+  const ref = useMagnetic<HTMLSpanElement>(enabled);
+
+  // Pendaftaran di layout effect: pointer bisa sudah berada di atas elemen
+  // sebelum React selesai mount.
+  useIsoLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    return registerHoverTarget(el);
+  }, [ref]);
+
+  return (
+    <span ref={ref} className={'magnetic inline-flex ' + className}>
+      {children}
+    </span>
+  );
+}
+
+/**
+ * Tombol utama. Gradasi emas hanya dipakai di sini, di satu kata headline
+ * hero, dan di garis dekoratif.
  */
 export function PrimaryButton({ children, href, className = '', external }: ButtonProps) {
   const isExternal = external ?? /^https?:/i.test(href);
   return (
-    <a
-      href={href}
-      className={`bg-gold-gradient group relative overflow-hidden text-ink shadow-[0_10px_30px_-14px_rgba(212,175,55,0.45)] ${BASE} ${className}`}
-      {...(isExternal ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
-    >
-      <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/35 to-transparent transition-transform duration-500 ease-out group-hover:translate-x-full" />
-      <span className="relative inline-flex items-center gap-2 px-6 py-3">
-        {children}
-        <ArrowRight className="transition-transform duration-300 ease-out group-hover:translate-x-1" />
-      </span>
-    </a>
+    <Magnetic className="inline-flex">
+      <a
+        href={href}
+        className={
+          'btn-shimmer bg-gold-gradient group relative overflow-hidden text-ink shadow-[0_10px_30px_-14px_rgba(212,175,55,0.45)] ' +
+          BASE +
+          ' ' +
+          className
+        }
+        {...(isExternal ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
+      >
+        <span className="relative inline-flex items-center gap-2 px-6 py-3">
+          {children}
+          <ArrowRight className="transition-transform duration-300 ease-out group-hover:translate-x-1" />
+        </span>
+      </a>
+    </Magnetic>
   );
 }
 
 /** Tombol sekunder: border emas, terisi tipis saat hover. */
 export function SecondaryButton({ children, href, className = '' }: ButtonProps) {
   return (
-    <a
-      href={href}
-      className={`border border-gold/30 text-bone hover:border-gold/55 hover:bg-gold/8 ${BASE} px-6 py-3 ${className}`}
-    >
-      <span className="inline-flex items-center gap-2">{children}</span>
-    </a>
+    <Magnetic className="inline-flex">
+      <a
+        href={href}
+        className={'border border-gold/30 text-bone hover:border-gold/55 hover:bg-gold/8 ' + BASE + ' px-6 py-3 ' + className}
+      >
+        <span className="inline-flex items-center gap-2">{children}</span>
+      </a>
+    </Magnetic>
   );
 }

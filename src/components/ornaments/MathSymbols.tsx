@@ -1,40 +1,33 @@
-type MathSymbolsProps = {
-  className?: string;
-};
-
 /**
- * Simbol matematika (Σ, π, ∫) sangat samar sebagai latar section.
- * Opacity dipegang oleh `opacity-*` pada elemen pembungkus pemanggil
- * sehingga tidak pernah melebihi 0.06.
+ * Simbol matematika (Sigma, pi, integral) sebagai latar section.
+ *
+ * Font serif besar, opasitas sangat rendah. Dipakai di section "Cara Ikut"
+ * dengan parallax paling cepat dari semua ornamen, sehingga terasa hampir
+ * lepas dari dokumen saat digulir.
  */
-export function MathSymbols({ className = '' }: MathSymbolsProps) {
+const SYMBOLS = [
+  { ch: '\u03A3', x: 8, y: 22, size: 128, rot: -6 },
+  { ch: '\u03C0', x: 72, y: 58, size: 96, rot: 5 },
+  { ch: '\u222B', x: 18, y: 86, size: 112, rot: -3 },
+] as const;
+
+export function MathSymbols({ className = '' }: { className?: string }) {
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 600 500"
-      fill="none"
-      preserveAspectRatio="xMidYMid slice"
-      className={className}
-    >
-      <g
-        fill="none"
-        stroke="#D4AF37"
-        strokeWidth="1.25"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fontFamily="Cormorant Garamond, serif"
-      >
-        {/* Sigma */}
-        <path d="M60 130 H150 L60 250 H150" />
-        {/* Pi */}
-        <path d="M270 130 V226 M270 178 H340 M340 178 V226" />
-        {/* Integral */}
-        <path d="M480 130 C455 155 470 175 480 195 C490 215 475 240 450 250" />
-        {/* Sigma kecil */}
-        <path d="M180 340 H240 L180 420 H240" opacity="0.7" />
-        {/* Phi */}
-        <path d="M420 320 V420 M360 370 H480" opacity="0.7" />
-      </g>
-    </svg>
+    <div aria-hidden="true" className={className}>
+      {SYMBOLS.map((s) => (
+        <span
+          key={s.ch}
+          className="math-symbol absolute font-display leading-none text-bone"
+          style={{
+            left: s.x + '%',
+            top: s.y + '%',
+            fontSize: s.size,
+            transform: `rotate(${s.rot}deg)`,
+          }}
+        >
+          {s.ch}
+        </span>
+      ))}
+    </div>
   );
 }

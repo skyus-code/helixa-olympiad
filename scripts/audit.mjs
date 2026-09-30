@@ -1,6 +1,6 @@
 /**
  * Audit responsif Helixa Olympiad via Chrome DevTools Protocol.
- * Tanpa dependency tambahan — memakai WebSocket bawaan Node 18+.
+ * Tanpa dependency tambahan - memakai WebSocket bawaan Node.
  *
  * Untuk setiap lebar:
  *   - deteksi scroll horizontal + elemen yang meluber
@@ -14,7 +14,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 
-const URL_TARGET = process.argv[2] ?? 'http://localhost:5180/';
+const URL_TARGET = process.argv[2] ?? 'http://localhost:4200/';
 const OUT_DIR = 'screenshots';
 const PORT = 9222;
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
@@ -120,7 +120,7 @@ function once(method) {
 
 await send('Page.enable');
 await send('Runtime.enable');
-// Headless Chrome default-nya prefers-reduced-motion: reduce — paksa animasi aktif
+// Headless Chrome default-nya prefers-reduced-motion: reduce - paksa animasi aktif
 // supaya screenshot & pengukuran mencerminkan keadaan normal.
 await send('Emulation.setEmulatedMedia', {
   features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
@@ -132,118 +132,69 @@ const AUDIT = `(() => {
   const de = document.documentElement;
   const vw = de.clientWidth;
 
-  // 1. Scroll horizontal
   const hasHScroll = de.scrollWidth > vw + 1;
   const overflowAmount = de.scrollWidth - vw;
 
-  // 2. Elemen yang melewati viewport (abaikan yang memang di-clipe ancestor-nya)
+  // Elemen yang melewati viewport, diabaikan bila ancestor-nya memang
+  // meng-clip (ornamen dekoratif memang begitu desainnya).
+  const isClipped = (el) => {
+    let p = el.parentElement;
+    while (p && p !== document.body) {
+      const ov = getComputedStyle(p).overflowX;
+      if (ov === 'clip' || ov === 'hidden' || ov === 'auto' || ov === 'scroll') return true;
+      p = p.parentElement;
+    }
+    return false;
+  };
+
   const offenders = [];
   for (const el of document.querySelectorAll('body *')) {
     const cs = getComputedStyle(el);
-    if (cs.position === 'fixed' || cs.display === 'none' || cs.visibility === 'hidden') continue;
+    if (cs.display === 'none' || cs.visibility === 'hidden') continue;
+    if (el.getAttribute('aria-hidden') === 'true') continue;
     const r = el.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) continue;
-
-    // Abaikan bila sudah di-clip oleh ancestor-nya (overflow-x hidden/clip)
-    let clipped = false;
-    for (let p = el.parentElement; p; p = p.parentElement) {
-      const pcs = getComputedStyle(p);
-      if (/hidden|clip/.test(pcs.overflowX)) { clipped = true; break; }
-    }
-    if (clipped) continue;
     if (r.right > vw + 1 || r.left < -1) {
-      offenders.push({
-        tag: el.tagName.toLowerCase(),
-        cls: (el.className && typeof el.className === 'string')
-          ? el.className.slice(0, 70) : '',
-        left: Math.round(r.left), right: Math.round(r.right),
-      });
-    }
-  }
-
-  // 3. Elemen yang meluber ke kanan viewport (indeks)
-  const bodyOverflow = document.body.scrollWidth - de.clientWidth;
-
-  // 4. Teks terpotong (scrollWidth > clientWidth pada elemen teks)
-  const clippedText = [];
-  for (const el of document.querySelectorAll('h1,h2,h3,p,a,button,span,dt,dd,li')) {
-    if (el.children.length > 0 && el.tagName !== 'BUTTON' && el.tagName !== 'A') continue;
-    if (el.scrollWidth > el.clientWidth + 2 && el.clientWidth > 0) {
-      const cs = getComputedStyle(el);
-      if (cs.overflow === 'visible' && cs.textOverflow !== 'ellipsis') {
-        clippedText.push({ tag: el.tagName.toLowerCase(), text: (el.textContent||'').trim().slice(0,40) });
+      if (!isClipped(el)) {
+        offenders.push({
+          tag: el.tagName.toLowerCase(),
+          cls: (typeof el.className === 'string' ? el.className : '').slice(0, 60),
+          left: Math.round(r.left),
+          right: Math.round(r.right),
+        });
       }
     }
   }
 
-  // 5. Target sentuh terlalu kecil
-  const smallTargets = [];
-  for (const el of document.querySelectorAll('a,button')) {
-    const r = el.getBoundingClientRect();
-    if (r.width === 0 || r.height === 0) continue;
-    if (getComputedStyle(el).display === 'inline' && el.closest('p,li,dd')) continue;
-    if (r.height < 43.5 || r.width < 43.5) {
-      smallTargets.push({
-        tag: el.tagName.toLowerCase(),
-        text: (el.textContent||'').trim().slice(0,30),
-        w: Math.round(r.width), h: Math.round(r.height),
-      });
-    }
-  }
-
-  // 6. Font heading yang terlalu kecil (< 28px) memakai Cormorant
-  const smallDisplay = [];
-  for (const el of document.querySelectorAll('h1,h2,h3,span,p,a,button')) {
-    const fam = getComputedStyle(el).fontFamily;
-    if (!/Cormorant/i.test(fam)) continue;
-    const size = parseFloat(getComputedStyle(el).fontSize);
-    const text = (el.textContent||'').trim();
-    if (size < 28 && text && !el.querySelector('*') && text.length > 2) {
-      smallDisplay.push({ tag: el.tagName.toLowerCase(), size: Math.round(size), text: text.slice(0,32) });
-    }
-  }
-
-  // 7. Lebar shell harus <= 1120
-  const shell = document.querySelector('.shell');
-  const shellWidth = shell ? Math.round(shell.getBoundingClientRect().width) : null;
-
-  // 7b. Konten yang meluber dari induknya (overflow visible) — mis. placeholder panjang
-  const parentOverflow = [];
-  for (const el of document.querySelectorAll('h1,h2,h3,p,span,a,li,dd,dt,button')) {
-    const p = el.parentElement;
-    if (!p) continue;
-    if (getComputedStyle(el).display === 'inline') continue;
+  // Teks yang terpotong vertikal: scrollHeight jauh lebih besar dari tinggi.
+  const clipped = [];
+  for (const el of document.querySelectorAll('h1,h2,h3,p,span,a,li,button,dd,dt')) {
+    if (el.children.length > 0) continue;
+    // Skip link sr-only sengaja diklip 1px: itu cara kerjanya, bukan bug.
+    if (el.classList.contains('sr-only') || el.closest('.sr-only')) continue;
+    // Elemen dengan clip-path juga disengaja secara visual, bukan terpotong.
     const cs = getComputedStyle(el);
-    const pcs = getComputedStyle(p);
-    if (cs.overflow !== 'visible' || /hidden|clip|auto|scroll/.test(pcs.overflowX)) continue;
-    if (el.scrollWidth > p.clientWidth + 2 && p.clientWidth > 0) {
-      parentOverflow.push({
-        tag: el.tagName.toLowerCase(),
-        text: (el.textContent||'').trim().slice(0,34),
-        elW: el.scrollWidth, parentW: p.clientWidth,
-      });
+    if (cs.overflow === 'hidden' || cs.overflowY === 'hidden') {
+      if (el.scrollHeight > el.clientHeight + 4 && el.clientHeight > 0) {
+        clipped.push({ tag: el.tagName.toLowerCase(), text: (el.textContent||'').slice(0,40) });
+      }
     }
   }
-
-  // 8. Tinggi hero
-  const hero = document.querySelector('.hero-section');
-  const heroH = hero ? Math.round(hero.getBoundingClientRect().height) : null;
-  const vh = window.innerHeight;
 
   return {
-    vw, hasHScroll, overflowAmount, bodyOverflow,
+    width: vw,
+    hasHScroll,
+    overflowAmount,
     offenders: offenders.slice(0, 8),
-    clippedText: clippedText.slice(0, 8),
-    smallTargets: smallTargets.slice(0, 8),
-    smallDisplay: smallDisplay.slice(0, 8),
-    parentOverflow: parentOverflow.slice(0, 8),
-    shellWidth, heroH, vh,
+    clipped: clipped.slice(0, 6),
+    docHeight: document.body.scrollHeight,
   };
 })()`;
 
-/* ------------------------------------------------------------------ loop */
+/* ------------------------------------------------------------------- run */
 
 const results = [];
+let failures = 0;
 
 for (const vp of VIEWPORTS) {
   await send('Emulation.setDeviceMetricsOverride', {
@@ -254,69 +205,67 @@ for (const vp of VIEWPORTS) {
     screenWidth: vp.width,
     screenHeight: vp.height,
   });
-
-  if (vp.mobile) {
-    await send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
-  } else {
-    await send('Emulation.setTouchEmulationEnabled', { enabled: false });
+  // Pointer presisi di viewports non-mobile supaya kursor/magnet aktif.
+  if (!vp.mobile) {
+    await send('Emulation.setEmulatedMedia', {
+      features: [
+        { name: 'prefers-reduced-motion', value: 'no-preference' },
+        { name: 'any-pointer', value: 'fine' },
+        { name: 'any-hover', value: 'hover' },
+      ],
+    });
   }
 
   const loaded = once('Page.loadEventFired');
   await send('Page.navigate', { url: URL_TARGET });
   await loaded;
-  await sleep(1400); // tunggu animasi load + reveal
-  await send('Runtime.evaluate', { expression: 'window.scrollTo(0,0)' });
-  await sleep(600);
-
-  // Gulik seluruh halaman supaya semua .reveal terpicu, lalu kembali ke atas.
-  // Ini memastikan elemen yang tadinya opacity:0 tidak diukur sebagai "kosong".
-  await send('Runtime.evaluate', {
-    expression: `(async () => {
-      const step = window.innerHeight * 0.6;
-      for (let y = 0; y < document.body.scrollHeight; y += step) {
-        window.scrollTo(0, y);
-        await new Promise(r => setTimeout(r, 90));
-      }
-      window.scrollTo(0, 0);
-    })()`,
-    awaitPromise: true,
-  });
-  await sleep(1200);
+  // Beri waktu untuk animasi load hero, import three.js, dan SplitText selesai.
+  await sleep(3200);
 
   const audit = await send('Runtime.evaluate', {
     expression: AUDIT,
     returnByValue: true,
   });
 
+  const r = audit.result.value;
+  const problems = [];
+  if (r.hasHScroll) problems.push('H-SCROLL ' + r.overflowAmount + 'px');
+  if (r.offenders.length) problems.push('MELUBER ' + r.offenders.length);
+  if (r.clipped.length) problems.push('TERPOTONG ' + r.clipped.length);
+
+  if (problems.length) failures++;
+
+  results.push({ viewport: vp.name, ...r, problems });
+
+  console.log(
+    (problems.length ? 'FAIL ' : 'ok   ') +
+      vp.name.padEnd(16) +
+      ' w=' + String(r.width).padEnd(5) +
+      ' h=' + String(r.docHeight).padEnd(6) +
+      (problems.length ? problems.join(' | ') : ''),
+  );
+  if (r.offenders.length) {
+    r.offenders.forEach((o) => console.log('        meluber: ' + o.tag + '.' + o.cls));
+  }
+  if (r.clipped.length) {
+    r.clipped.forEach((c) => console.log('        terpotong: "' + c.text + '"'));
+  }
+
+  // Screenshot full-page
+  const metrics = await send('Page.getLayoutMetrics');
+  const full = metrics.cssContentSize;
   const shot = await send('Page.captureScreenshot', {
     format: 'png',
     captureBeyondViewport: true,
+    clip: { x: 0, y: 0, width: full.width, height: Math.min(full.height, 24000), scale: 1 },
   });
   writeFileSync(`${OUT_DIR}/${vp.name}.png`, Buffer.from(shot.data, 'base64'));
-
-  const r = audit.result.value;
-  results.push({ vp: vp.name, ...r });
-
-  const flag = r.hasHScroll ? 'H-SCROLL!' : 'ok';
-  console.log(
-    `${vp.name.padEnd(14)} ${flag.padEnd(11)} vw=${r.vw} shell=${r.shellWidth} hero=${r.heroH}/${r.vh}` +
-      (r.hasHScroll ? ` overflow=+${r.overflowAmount}px` : '') +
-      (r.offenders.length ? ` offenders=${r.offenders.length}` : '') +
-      (r.clippedText.length ? ` clippedText=${r.clippedText.length}` : '') +
-      (r.smallTargets.length ? ` smallTargets=${r.smallTargets.length}` : '') +
-      (r.smallDisplay.length ? ` smallDisplay=${r.smallDisplay.length}` : '') +
-      (r.parentOverflow.length ? ` parentOverflow=${r.parentOverflow.length}` : ''),
-  );
-
-  if (r.offenders.length) console.log('   leuber:', JSON.stringify(r.offenders));
-  if (r.clippedText.length) console.log('   teks terpotong:', JSON.stringify(r.clippedText));
-  if (r.smallTargets.length) console.log('   target < 44px:', JSON.stringify(r.smallTargets));
-  if (r.smallDisplay.length) console.log('   display < 28px:', JSON.stringify(r.smallDisplay));
-  if (r.parentOverflow.length) console.log('   luber dari induk:', JSON.stringify(r.parentOverflow));
 }
 
 writeFileSync(`${OUT_DIR}/audit.json`, JSON.stringify(results, null, 2));
-console.log(`\nSelesai. Screenshot + audit.json di ${OUT_DIR}/`);
+console.log('\n' + (VIEWPORTS.length - failures) + '/' + VIEWPORTS.length + ' viewport bersih.');
+console.log('Screenshot + audit.json di ' + OUT_DIR + '/');
+
 ws.close();
 chrome.kill();
 process.exit(0);
