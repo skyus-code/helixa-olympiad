@@ -92,11 +92,13 @@ export function PrimaryButton({ children, href, className = '', external }: Butt
 
 /** Tombol sekunder: border emas, terisi tipis saat hover. */
 export function SecondaryButton({ children, href, className = '' }: ButtonProps) {
+  const isExternal = /^https?:/i.test(href);
   return (
     <Magnetic className="inline-flex">
       <a
         href={href}
         className={'border border-gold/30 text-bone hover:border-gold/55 hover:bg-gold/8 ' + BASE + ' px-6 py-3 ' + className}
+        {...(isExternal ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
       >
         <span className="inline-flex items-center gap-2">{children}</span>
       </a>

@@ -8,7 +8,7 @@
    -------------------------------------------------------------------------- */
 
 export const REGISTER_URL = '#';
-export const INSTAGRAM_URL = '#';
+export const INSTAGRAM_URL = 'https://www.instagram.com/helixa.olim/?hl=en';
 
 /* --------------------------------------------------------------------------
    NAVBAR

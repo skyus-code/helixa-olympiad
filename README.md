@@ -507,8 +507,10 @@ Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 3. **Lenis 1.3** (`lenis`), bukan paket lama `@studio-freight/lenis` yang sudah deprecated.
 4. **Font dimuat dari Google Fonts** dengan `preconnect` + `display=swap`. Kalau situs perlu
    fully offline-first, ganti ke `@fontsource`.
-5. **`REGISTER_URL` / `INSTAGRAM_URL` = `"#"`** sengaja dibiarkan sebagai placeholder agar
-   tidak ada tautan palsu yang terpublish.
+5. **`REGISTER_URL` = `"#"`** sengaja dibiarkan sebagai placeholder agar tidak ada tautan
+   palsu yang terpublish. **`INSTAGRAM_URL`** sudah diisi URL resmi Helixa
+   (`https://www.instagram.com/helixa.olim/`) dan terbuka di tab baru; kedua tombol/link
+   Instagram (CTA penutup & footer) memakai konstanta ini.
 6. **Tidak ada klaim kemitraan** dengan pemerintah atau instansi mana pun, sesuai batasan
    konten. Pernyataan independensi dipertahankan.
 7. **Skrip verifikasi butuh Chrome** di `C:\Program Files\Google\Chrome\Application\chrome.exe`
