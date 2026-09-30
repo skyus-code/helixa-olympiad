@@ -31,7 +31,7 @@ export function WhyHelixa() {
   const dnaStyle = fineWide && !reduce ? { y: dnaY } : undefined;
 
   return (
-    <Section id="tentang" z={20} card>
+    <Section id="tentang" z={20} stack card>
       <motion.div
         aria-hidden="true"
         data-parallax

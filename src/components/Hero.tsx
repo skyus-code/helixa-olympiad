@@ -2,10 +2,13 @@
  * Hero.
  *
  * Susunan dari belakang ke depan:
- *   1. .hero-ambient - glow radial (CSS murni, bukan WebGL), statis; parallax
- *      datang dari transform yang ditulis paket `motion` saat scroll.
- *   2. vignette      - gelapkan tepi supaya teks tetap terbaca.
- *   3. konten        - eyebrow, headline kinetic, subteks, dua CTA, scroll hint.
+ *   1. .hero-ambient - glow radial (CSS murni), statis; parallax datang dari
+ *      transform yang ditulis paket `motion` saat scroll.
+ *   2. HeroCanvas    - objek 3D heliks DNA + satelit (Canvas 2D, nol
+ *      dependency). Tidak ada di bawah 768px atau saat reduced-motion; yang
+ *      tampil di sana tetap glow pada langkah 1.
+ *   3. .hero-scrim   - gelapkan sisi teks dan tepi layar.
+ *   4. konten        - eyebrow, headline kinetic, subteks, dua CTA, scroll hint.
  *
  * Headline dipecah jadi tiga elemen (lead / accent / tail) sesuai konten.
  * "sains" dibiarkan utuh sengaja supaya gradient emas tidak restart per huruf.
@@ -17,6 +20,7 @@ import { motion, useReducedMotion, useScroll, useTransform } from 'motion/react'
 import { DUR, EASE, MQ, PARALLAX } from '../lib/motion';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { PrimaryButton, SecondaryButton } from './ui/Buttons';
+import { HeroCanvas } from './HeroCanvas';
 import { HERO } from '../content';
 
 /** Baris headline yang naik dari dalam mask, sekali saat mount. */
@@ -84,7 +88,9 @@ export function Hero() {
       className="hero-section stack-wrap isolate flex min-h-[100svh] items-center overflow-x-clip"
       style={{ zIndex: 10, scrollMarginTop: 88 }}
     >
-      {/* Ambient glow statis; parallax ditulis paket motion saat fineWide. */}
+      {/* Ambient glow statis; parallax ditulis paket motion saat fineWide.
+          Canvas 3D menumpuk DI ATAS glow: heliks terasa bercahaya dari dalam
+          cahaya ambient, bukan ditempel di atasnya. */}
       <motion.div
         aria-hidden="true"
         data-parallax
@@ -92,11 +98,12 @@ export function Hero() {
         style={ambientStyle}
       />
 
-      {/* Vignette: gelapkan tepi agar teks tetap terbaca. */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_75%_65%_at_50%_45%,transparent_0%,rgba(10,10,11,0.55)_70%,rgba(10,10,11,0.9)_100%)]"
-      />
+      <HeroCanvas />
+
+      {/* Scrim: gelapkan sisi teks supaya headline tetap terbaca di atas objek
+          3D. Sengaja TIDAK memakai z-index negatif — karena ditulis SESUDAH
+          canvas, scrim benar-benar meredupkan DNA, bukan justru tergantikan. */}
+      <div aria-hidden="true" className="hero-scrim pointer-events-none absolute inset-0" />
 
       <div className="shell relative w-full pt-28 pb-24 md:pt-32 md:pb-28">
         <div className="max-w-2xl">

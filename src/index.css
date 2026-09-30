@@ -141,9 +141,17 @@
     color: var(--color-gold-bright);
   }
 
-  /* Kursor kustom hanya hidup di pointer presisi DAN layar lebar (>=1024px).
-     Tanpa ini, mouse users akan kehilangan penanda saat JS gagal. */
-  @media (hover: hover) and (pointer: fine) and (min-width: 1024px) {
+  /*
+   * Kursor kustom hanya hidup di pointer presisi — TIDAK ada syarat lebar.
+   *
+   * Syarat lebar pernah ada dan itu salah: kursor hilang di jendela 1023px
+   * ke bawah, padahal penanda presisi justru paling dibutuhkan di sana
+   * (jendela sempit, teks kecil). Satu-satunya alasan mematikan kursor ini
+   * adalah pointer yang tidak presisi, atau pengguna meminta reduced-motion —
+   * keduanya sudah ditangani JS (atribut `data-custom-cursor` tidak dipasang)
+   * dan aturan cadangan di blok reduced-motion di bawah.
+   */
+  @media (hover: hover) and (pointer: fine) {
     html[data-custom-cursor='on'],
     html[data-custom-cursor='on'] * {
       cursor: none !important;
@@ -169,44 +177,75 @@
    ========================================================================== */
 
 @layer components {
-  /* ---- Stacking antar-section ("kartu menumpuk") ------------------------ */
+  /* ---- Section: dasar, zona tumpukan, dan garis pemisah ------------------ */
   /*
-   * Desktop (>=768px): section dipin di `top: 0` dengan min-height 100svh.
-   * Saat digulir, section berikutnya (z-index lebih tinggi) naik menutupi
-   * section sebelumnya — efek kartu menumpuk, murni CSS, tanpa listener.
+   * Efek "kartu menumpuk" sengaja hanya dipakai SEKAHITAN section — yang
+   * menentukan adalah `stack` di components/ui/Section.tsx, bukan CSS di sini.
+   *
+   * Alasannya bukan performa. Kalau semua section dipin, dibulatkan, dan
+   * diberi bayangan, halaman berhenti terbaca sebagai bagian-bagian yang
+   * berbeda dan berubah jadi tumpukan slab yang seragam. Efeknya sendiri cuma
+   * terasa di awal scroll, jadi dua kartu sudah cukup.
    */
+
+  /* Bentuk dasar, berlaku untuk semua section: opaque background + z-index. */
   .stack-wrap {
-    position: sticky;
-    top: 0;
-    min-height: 100svh;
-    overflow: hidden;
+    position: relative;
     background-color: var(--color-ink);
   }
 
+  /* Tumpukan. Tanpa pin lebih dulu: flow normal dengan overlap kecil. */
+  .stack-wrap--stack {
+    margin-top: -28px;
+  }
+
+  /*
+   * Pin desktop. Dua syarat, keduanya wajib, keduanya hasil pengukuran:
+   *
+   *  - `min-width: 1024px`. Di bawah itu isi section ikut tinggi karena teks
+   *    membungkus lebih sering: diukur, `perdana` butuh 763px isinya pada
+   *    lebar 800px, tapi hanya 489px pada 1024px. Menyetakkan ambang lebar
+   *    dengan ambang tinggi di satu titik saja akan selalu salah di sisi
+   *    mana pun.
+   *
+   *  - `min-height: 720px`. Section yang dipin lebih tinggi dari viewport
+   *    membuat ekornya tidak terjangkau: begitu tertahan di `top: 0`, sisanya
+   *    keluar dari jangkauan scroll dan tidak ada gerakan yang bisa
+   *    membawanya kembali. 720px menutup kasus terburuk di lebar 1024px
+   *    (isi 547px + padding 115px = 662px).
+   *
+   * Tanpa pin, kartu tetap dapat radius, bayangan, dan overlap 28px, jadi
+   * bahasa visualnya tidak berubah — hanya tidak menempel di layar.
+   */
+  @media (min-width: 1024px) and (min-height: 720px) {
+    .stack-wrap--stack {
+      position: sticky;
+      top: 0;
+      min-height: 100svh;
+      overflow: hidden;
+    }
+  }
+
   /* Kartu: sudut atas membulat + bayangan ke atas supaya "mengambang" saat
-     menutupi section sebelumnya. Hero tidak memakai ini. */
+     menutupi section sebelumnya. */
   .stack-wrap--card {
     border-radius: 28px 28px 0 0;
     box-shadow: 0 -24px 60px -24px rgba(0, 0, 0, 0.55);
   }
 
-  /*
-   * Mobile (<768px): pin dilepas (normal flow) supaya konten section yang
-   * lebih tinggi dari viewport tetap terbaca penuh. Kesan bertumpuk
-   * dipertahankan lewat z-index + kartu yang saling menimpa tepi kecil.
-   */
-  @media (max-width: 767px) {
-    .stack-wrap {
-      position: relative;
-      top: auto;
-      min-height: 0;
-      overflow: visible;
-    }
-
-    .stack-wrap:not(:first-child) {
-      margin-top: -28px;
-    }
+  /* Section biasa: satu garis rambut emas sebagai pemisah dari section
+     sebelumnya. Jauh lebih tenang daripada kartu, dan tetap memberi
+     struktur baca yang jelas. */
+  .stack-wrap--rule {
+    border-top: 1px solid rgba(212, 175, 55, 0.14);
   }
+
+  /*
+   * Tidak ada blok khusus mobile lagi. Pin hanya hidup di dalam satu media
+   * query di atas, jadi di bawahnya section otomatis flow normal dengan
+   * overlap 28px dari aturan dasar — persis yang dibutuhkan agar konten yang
+   * lebih tinggi dari viewport tetap terbaca penuh.
+   */
 
   /* ---- Liquid gold shimmer ---------------------------------------------- */
   .text-gold-gradient {
@@ -450,6 +489,52 @@
     will-change: transform;
   }
 
+  /* ---- Hero scrim --------------------------------------------------------- */
+  /*
+   * Lapisan gelap antara objek 3D dan konten. Bentuknya berubah menurut lebar.
+   *
+   *  - Di bawah 1280px objek 3D berada di tengah layar (lihat WIDE_AT di
+   *    three/helixScene.ts), jadi scrim cukup berupa vignette simetris plus
+   *    peneduh tepi atas.
+   *  - Di 1280px ke atas objek digeser ke kanan, dan sisi kiri berubah jadi satu
+   *    gradient linear yang gelap di belakang headline lalu memudar ke kanan.
+   *    Bentuk elips tidak bisa dipakai di sini: di sisi kanan ia justru
+   *    bergantung ke gelap, dan objek yang justru paling terang di kanan.
+   *
+   * 1280px WAJIB sama dengan WIDE_AT di three/helixScene.ts. Kalau keduanya
+   * tidak sepakat soal kapan objek bergeser, salah satu akibatnya: teks
+   * tertutup objek, atau objek menggantung sendirian di ruang kosong.
+   *
+   * Ditulis di CSS, bukan sebagai arbitrary value Tailwind, karena isinya
+   * beberapa warna dalam dua lapis per breakpoint — utility class akan jadi
+   * tidak terbaca.
+   */
+  .hero-scrim {
+    background:
+      linear-gradient(180deg, rgba(10, 10, 11, 0.5) 0%, rgba(10, 10, 11, 0) 20%),
+      radial-gradient(
+        ellipse 78% 68% at 50% 46%,
+        transparent 0%,
+        rgba(10, 10, 11, 0.45) 72%,
+        rgba(10, 10, 11, 0.85) 100%
+      );
+  }
+
+  @media (min-width: 1280px) {
+    .hero-scrim {
+      background:
+        linear-gradient(
+          100deg,
+          rgba(10, 10, 11, 0.94) 0%,
+          rgba(10, 10, 11, 0.9) 38%,
+          rgba(10, 10, 11, 0.62) 58%,
+          rgba(10, 10, 11, 0.22) 76%,
+          rgba(10, 10, 11, 0) 92%
+        ),
+        linear-gradient(180deg, rgba(10, 10, 11, 0.5) 0%, rgba(10, 10, 11, 0) 20%);
+    }
+  }
+
   /* ---- Kinetic typography: mask per baris --------------------------------- */
   /* Tiap baris dibungkus wrapper ber-overflow:hidden; baris bergerak dari
      dalam mask, bukan sekadar fade. */
@@ -617,6 +702,32 @@
 }
 
 /* ==========================================================================
+   OVERRIDE UTILITAS — layer `utilities`, bukan `components`
+   ========================================================================== */
+
+/*
+ * Padding section yang di-pin menyusut di viewport pendek, supaya isinya tetap
+ * muat tanpa harus menurunkan ambang `min-height` di atas.
+ *
+ * Kenapa layer `utilities`: padding section datang dari kelas utilitas
+ * `py-18 md:py-24 lg:py-30` yang ditulis di JSX (`innerClassName` pada
+ * components/ui/Section). Utilitas selalu mengalahkan komponen di cascade
+ * Tailwind — kalau aturan ini diletakkan di `@layer components`, ia tidak akan
+ * pernah berlaku sama sekali.
+ *
+ * Batas atas 880px supaya di layar tinggi padding tetap longgar seperti biasa
+ * (7,5rem). Tanpa batas itu, `8svh` pada viewport 900px hanya menghasilkan
+ * 72px dan kartu terlihat kosong di bawah.
+ */
+@layer utilities {
+  @media (min-width: 1024px) and (min-height: 720px) and (max-height: 880px) {
+    .stack-wrap--stack > .shell {
+      padding-block: max(3rem, 8svh);
+    }
+  }
+}
+
+/* ==========================================================================
    SCROLL REVEAL — dibungkus media no-preference supaya pengguna
    prefers-reduced-motion melihat konten langsung tanpa state tersembunyi.
    ========================================================================== */
@@ -710,22 +821,20 @@
     scroll-behavior: auto !important;
   }
 
-  /* Stacking dimatikan total: semua section relative biasa, tanpa radius/
-     bayangan/overlap. */
-  .stack-wrap {
+  /* Tumpukan dimatikan total: semua section relative biasa, tanpa radius/
+     bayangan/overlap. Garis rambut tetap dibiarkan — itu pembatas baca,
+     bukan gerak, jadi tidak melanggar makna reduced-motion. */
+  .stack-wrap--stack {
     position: relative !important;
     top: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
+    margin-top: 0 !important;
   }
 
   .stack-wrap--card {
     border-radius: 0 !important;
     box-shadow: none !important;
-  }
-
-  .stack-wrap:not(:first-child) {
-    margin-top: 0 !important;
   }
 
   /* Kursor kustom mati total (attribut tidak dipasang JS, ini cadangan). */

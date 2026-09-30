@@ -7,3 +7,7 @@ dist-ssr
 node_modules/.tmp
 *.tsbuildinfo
 screenshots
+
+# Laporan Lighthouse: hasil ukur sekali pakai, bukan sumber. Skrip
+# scripts/lighthouse.mjs menulis lh.json di akar proyek.
+lh*.json

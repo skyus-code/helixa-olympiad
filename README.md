@@ -3,8 +3,8 @@
 Landing page satu halaman untuk **Helixa Olympiad**, olimpiade online Matematika & Biologi
 untuk siswa SMA di Indonesia. Static site tanpa backend, dibangun dengan Vite + React +
 TypeScript + Tailwind v4. Stack gerak resmi: paket **`motion`** (Motion for React) + CSS
-native + IntersectionObserver. Tanpa GSAP / Lenis / ScrollTrigger / SplitText / three.js,
-tanpa WebGL, tanpa scroll-jacking.
+native + IntersectionObserver, plus satu renderer Canvas 2D sendiri untuk objek 3D hero.
+Tanpa GSAP / Lenis / ScrollTrigger / SplitText / three.js, tanpa WebGL, tanpa scroll-jacking.
 
 Prinsip desain: **80% obsidian, 10% gading, 10% emas cair.** Kalau ragu, kurangi.
 
@@ -19,11 +19,11 @@ npm run build    # output ke dist/
 npm run preview  # cek hasil build
 ```
 
-## Dua skrip verifikasi
+## Tiga skrip verifikasi
 
-Kedua skrip memakai Chrome DevTools Protocol lewat WebSocket bawaan Node — tanpa
-Puppeteer/Playwright, jadi tidak menambah dependency. Keduanya mengukur **production
-build**, bukan dev server, dan keduanya butuh server yang sudah jalan:
+Ketiganya memakai Chrome DevTools Protocol lewat WebSocket bawaan Node — tanpa
+Puppeteer/Playwright, jadi tidak menambah dependency. Semuanya mengukur **production
+build**, bukan dev server, dan semuanya butuh server yang sudah jalan:
 
 ```bash
 # terminal 1
@@ -32,18 +32,27 @@ npm run build && npm run preview -- --port 4200 --strictPort
 # terminal 2
 npm run check:responsive   # 11 viewport: overflow, teks terpotong, target sentuh
 npm run check:verify       # cek statis + 14 bagian perilaku & animasi di browser
+npm run check:lighthouse   # Lighthouse Mobile (butuh install terpisah, lihat catatan)
 ```
 
 Keduanya menerima URL sebagai argumen pertama, default `http://localhost:4200/`:
 
 ```bash
-node scripts/audit.mjs  http://localhost:4200/
-node scripts/verify.mjs http://localhost:4200/
+node scripts/audit.mjs     http://localhost:4200/
+node scripts/verify.mjs    http://localhost:4200/
+node scripts/lighthouse.mjs http://localhost:4200/ lh.json
 ```
 
 > **Penting:** headless Chrome default-nya `prefers-reduced-motion: reduce`. Kedua skrip
 > memaksa `no-preference` supaya animasi benar-benar diuji, dan `verify.mjs` menguji
 > mode reduced-motion secara terpisah (Bagian B12).
+>
+> **`lighthouse.mjs` punya install sendiri.** CLI `lighthouse` tidak bisa dipakai di
+> mesin ini (`npx lighthouse` gagal dengan `ECOMPROMISED`; memanggil
+> `lighthouse/cli/bin.js` langsung keluar kode 0 tanpa menulis laporan). Jadi skrip ini
+> memanggil Node API dengan `chrome-launcher`, dan **`require`-nya menunjuk ke
+> `node_modules` di luar repo** — kalau folder itu tidak ada, skrip gagal dengan pesan
+> jelas. Angka Lighthouse di README diambil lewat skrip ini, bukan lewat CLI.
 
 ### Apa yang diukur `verify.mjs`
 
@@ -51,9 +60,9 @@ Bukan "apakah kelas CSS-nya ada", tapi apa yang benar-benar terjadi di browser. 
 fitur cari bukti numerik: transform yang berubah, tinggi yang beranimasi, atribut yang
 berubah, interaksi yang benar-benar berfungsi.
 
-1. **Stack kartu (sticky stack)** — 8 section di `<main>`, `position: sticky; top: 0`,
-   `min-height: 100svh`, z-index naik 10→80, radius 28px + bayangan untuk semua kecuali
-   Hero, `scroll-margin-top` 88px
+1. **Stack kartu — HANYA 2 section** — `tentang` + `perdana` yang jadi kartu `position:
+   sticky; top: 0`, z-index 20/30, radius 28px + bayangan; 5 section lain pakai garis rambut
+   1px dalam flow normal; `scroll-margin-top` 88px. Pin butuh **1024px DAN 720px**
 2. **Kinetic typography** — headline terpecah jadi baris (`motion.span` naik dari mask,
    sekali saat mount), teks utuh, kata "sains" bergradasi emas; ambient glow statis
 3. **Scroll reveal** — semua grup/single reveal (IntersectionObserver) terpicu setelah
@@ -61,16 +70,20 @@ berubah, interaksi yang benar-benar berfungsi.
 4. **Garis progres** — satu elemen `scaleX`/`scaleY` tumbuh mengikuti scroll jendela
 5. **Parallax** — ornamen DNA bergeser; HANYA ≥1024px + pointer fine; dibatasi 2 titik
 6. **FAQ akordeon** — CSS `grid-template-rows`, `inert` pada panel tertutup, satu-buka,
-   aria-expanded, tetap bisa diklik saat section sticky
+   aria-expanded, dan tombolnya diklik lewat `elementFromPoint` (bukti tidak ada section
+   ter-pin yang menutupinya)
 7. **Navbar** — transparan di atas → blur + solid + border emas setelah scroll
 8. **Kursor kustom** — cincin mengejar pointer (lerp rAF), dot menempel tepat, cincin
-   berpusat, HANYA ≥1024px + pointer fine
+   berpusat; **hanya syarat pointer fine, tanpa batas lebar** — diuji hidup di 900px,
+   bukan hanya di ≥1024px
 9. **Magnet & spotlight** — tombol tertarik mendekat pointer dan kembali diam; `--mx/--my`
    spotlight diperbarui; keduanya mati di layar sentuh
-10. **Mobile** — `pointer: coarse` nyata: pin sticky dilepas (normal flow, overlap
-    `-28px`), kursor/magnet/parallax mati, menu modal `dialog` + `aria-modal`, Esc menutup
+10. **Mobile** — `pointer: coarse` nyata: canvas 3D tidak pernah dibuat (<768px), pin
+    sticky dilepas (normal flow, overlap `-28px`), kursor/magnet/parallax mati, menu
+     modal `dialog` + `aria-modal`, Esc menutup
 11. **Reduced motion** — section kembali `relative`, kartu tanpa radius/bayangan, teks
-    langsung terbaca, scroll native, parallax ditangguhkan, kursor mati
+    langsung terbaca, scroll native, parallax ditangguhkan, kursor mati, canvas 3D tidak
+     dibuat
 12. **Sweep lebar** — 320/375/768/1024/1440 tanpa scroll horizontal, FAQ tetap bisa diklik
 13. **Konsol bersih** — nol exception, nol `console.error`
 
@@ -98,11 +111,30 @@ berubah, interaksi yang benar-benar berfungsi.
    ditonjolkan. `useMagnetic` dan `SpotlightCard` karena itu **menandai** rect basi di
    scroll/resize lalu mengukurnya lagi di frame berikutnya (saat benar-benar dipakai),
    bukan mengoreksinya.
-4. **Gerakan dikunci preferensi di JS dan CSS sekaligus.** Gerbang `useMediaQuery` + 
+4. **Gerakan dikunci preferensi di JS dan CSS sekaligus.** Gerbang `useMediaQuery` +
    `useReducedMotion` di komponen, dan blok `@media (prefers-reduced-motion: reduce)` di
    CSS. `getComputedStyle().transform` dibaca (computed, bukan inline) untuk transform
    yang ditulis CSS var (`translate3d(--magnet-x, ...)`), motion inline, maupun properti
    `translate:` — helper `__xform` menormalkan semuanya ke `{x, y, sx, sy}`.
+5. **Jebakan pengukuran yang hampir lolos.** Beberapa test dulu lulus karena test-nya
+   salah, bukan karena kodenya benar:
+   - **Transisi navbar** diuji dengan `setTimeout` 700 ms. Pada lima percobaan berturut
+     sampelnya 0,43–0,68 sementara nilai sebenarnya 0,72 — terjaring di tengah jalan
+     karena mesin sedang load. Sekarang test menunggu sampai nilainya **dua kali sama**
+     (bukan menebak durasi), jadi tidak bisa lulus kalau transisinya memang tak pernah
+     tuntas.
+   - **Daftar library terlarang** memakai substring polos `'three'`, yang ikut menangkap
+     path `src/three/` milik renderer sendiri. Sekarang polanya berbentuk impor
+     (`from 'three`, `THREE.`, `WebGLRenderingContext`), sehingga three.js tetap
+     terdeteksi tapi path lokal tidak.
+   - **Asersi FAQ** menuntut `top = 0` karena mobility-asumsi semua section sticky.
+     Sekarang section flow normal, jadi yang diuji lebih ketat: tombolnya diklik
+     (`elementFromPoint`) dan harus benar-benar yang menutup elemen teratas — itulah
+     bukti tidak ada section ter-pin yang menutupinya.
+6. **Regresi bisa hidup di dua tempat.** Kursor kustom hilang bukan karena satu baris
+   JS: `MQ.motionFineWide` **dan** aturan CSS `cursor: none` sama-sama mengunci
+   `min-width: 1024px`. Memperbaiki satu saja tidak akan terlihat. B8 sengaja menguji
+   **900px** supaya dua kondisi itu tidak bisa kembali diam-diam.
 
 ---
 
@@ -119,7 +151,8 @@ Helixa Olympiad/
 ├─ public/fonts/           # Cormorant Garamond + Manrope variable woff2 (SIL OFL, latin, ~62 kB)
 ├─ scripts/
 │  ├─ audit.mjs            # 11 viewport + deteksi overflow / teks terpotong / target sentuh
-│  └─ verify.mjs           # cek statis + 14 bagian perilaku & animasi
+│  ├─ verify.mjs           # cek statis + 14 bagian perilaku & animasi (111 cek)
+│  └─ lighthouse.mjs       # Lighthouse Mobile lewat Node API (install di luar repo)
 └─ src/
    ├─ main.tsx
    ├─ App.tsx              # Navbar → main#top (8 section) → Footer → grain → cursor
@@ -128,6 +161,8 @@ Helixa Olympiad/
    ├─ vite-env.d.ts
    ├─ lib/
    │  └─ motion.ts         # MQ, EASE, DUR, PARALLAX, CURSOR
+   ├─ three/
+   │  └─ helixScene.ts     # renderer objek 3D hero — Canvas 2D, tanpa three.js
    ├─ hooks/
    │  ├─ useIsoLayoutEffect.ts  # useLayoutEffect aman-SSR
    │  ├─ useMediaQuery.ts       # abonemen MQ sebagai state React (gerbang satu-satunya)
@@ -136,13 +171,14 @@ Helixa Olympiad/
    └─ components/
       ├─ CursorLayer.tsx   # cincin emas + dot, lerp rAF time-based, portal ke body
       ├─ Navbar.tsx
-      ├─ Hero.tsx          # kinetic per baris + ambient parallax
-      ├─ WhyHelixa.tsx
-      ├─ PerdanaInfo.tsx
-      ├─ HowToJoin.tsx
+      ├─ Hero.tsx          # kinetic per baris + ambient parallax + <HeroCanvas/>
+      ├─ HeroCanvas.tsx    # pembungkus tipis: gerbang MQ.motionScene + dynamic import
+      ├─ WhyHelixa.tsx     # stack card (1 dari 2 section yang di-pin)
+      ├─ PerdanaInfo.tsx   # stack card (2 dari 2 section yang di-pin)
+      ├─ HowToJoin.tsx     # stack rule (garis rambut, tanpa overlap)
       ├─ JudgesPartners.tsx
       ├─ RulesTransparency.tsx
-      ├─ Faq.tsx           # akordeon CSS grid-rows + inert
+      ├─ Faq.tsx           # akordeon CSS grid-rows + inert; stack rule
       ├─ ClosingCta.tsx
       ├─ ornaments/
       │  ├─ DnaHelix.tsx
@@ -228,14 +264,44 @@ didefinisikan sekali di `.text-gold-gradient` / `.bg-gold-gradient`.
 
 ## Ornamen — nol gambar raster, nol WebGL
 
-Tidak ada satu pun gambar eksternal dan tidak ada canvas WebGL. Semua ornamen SVG/CSS.
+Tidak ada satu pun gambar eksternal dan tidak ada WebGL. Ornamen berjas SVG/CSS, kecuali
+satu: objek 3D hero, yang digambar sendiri di Canvas 2D (lihat di bawah).
 
 | Komponen | Isi | Letak |
 |---|---|---|
 | `.hero-ambient` | Glow radial CSS murni, statis; parallax kecil saat scroll (≥1024px + pointer fine) | Latar hero |
+| `HelixScene` | **Canvas 2D**: heliks DNA + cincin penanda + partikel + satelit orbit | Latar hero, ≥768px |
 | `DnaHelix` | Dua untai sinusoidal berpelintir + anak tangga (SVG) | Section Kenapa Helixa |
 | `MathSymbols` | Σ, π, ∫ — statis, bukan parallax | Latar Cara Ikut |
 | `GrainOverlay` | `feTurbulence` data-URI | `fixed inset-0`, `pointer-events-none` |
+| `.hero-scrim` | Gradien gelap **di atas** canvas, melindungi teks dari objek | Lapisan antara canvas & konten |
+
+### Objek 3D hero — Canvas 2D, bukan three.js
+
+`src/three/helixScene.ts` (nama folder warisan dari implementasi three.js lama; paketnya
+sendiri tidak pernah dipakai lagi) menggambar sendiri heliks DNA, cincin penanda, partikel
+naik, dan satu satelit yang mengorbit. Cara kerjanya:
+
+- **Perspektif + depth-sort di JS.** Tiap titik diproyeksikan sendiri (`project()`), lalu
+  dirender berurutan dari belakang ke depan; compositing `lighter` untuk titik bercahaya.
+- **Sprite di-prerender sekali.** Tiga gradient radial 48×48 dibangun di awal, lalu tiap
+  frame cukup `drawImage`. Menyusun string rgba di dalam loop adalah bottleneck yang sudah
+  dihindari, bukan placeholder.
+- **Tanpa WebGL, tanpa shader, tanpa dependency.** three.js menambah ~150 kB gzip + kompilasi
+  shader saat load, dan bisa ditolak GPU blocklist. Renderer ini 3.85 kB / 1.92 kB gzip
+  dan tidak pernah gagal kompilasi.
+- **Berhenti total saat keluar viewport.** `IntersectionObserver` membatalkan rAF-nya,
+  bukan hanya berhenti menggambar — inilah penghematan nyata, bukan yang berbasis TBT.
+- **DPR dibatasi 2.** Baterai di laptop retina tidak perlu diratakan ke lebih banyak piksel.
+
+Gerbangnya `MQ.motionScene` = `no-preference` **dan `min-width: 768px`**. Di bawah itu, atau
+saat reduced-motion, scene tidak pernah dibuat — yang tampil `.hero-ambient` + `.hero-scrim`
+CSS. Lebar saja tanpa syarat pointer: mouse tidak harus ada supaya DNA tetap berputar.
+
+Objek digeser ke kanan pada ≥1280px (`cx = 0.72 w`) supaya headline rata-kiri tidak
+berebut ruang; di bawah itu posisinya tengah dan redup (`master = 0.55`). Breakpoint ini
+**wajib sama** dengan `@media (min-width: 1280px)` di `.hero-scrim` — kalau tidak cocok, teks
+tertutup objek atau objek menggantung di ruang kosong.
 
 ---
 
@@ -248,18 +314,27 @@ yang sama persis.
 | Query | Arti |
 |---|---|
 | `MQ.motion` | Gerak diizinkan (bukan reduced-motion) |
-| `MQ.motionFine` | + pointer presisi. **Satu-satunya tempat magnet boleh hidup** |
-| `MQ.motionFineWide` | + layar ≥1024px. **Satu-satunya tempat kursor kustom & parallax boleh hidup** |
+| `MQ.motionFine` | + pointer presisi. **Satu-satunya tempat magnet & kursor kustom boleh hidup** |
+| `MQ.motionFineWide` | + layar ≥1024px. **Satu-satunya tempat parallax boleh hidup** |
+| `MQ.motionScene` | + layar ≥768px. **Satu-satunya tempat scene 3D hero boleh hidup** |
+
+> **Kursor kustom tidak lagi memakai `MQ.motionFineWide`.** Dulu ia dikunci ke
+> `min-width: 1024px`, dan itu regresi: kursor hilang di jendela 1023px ke bawah —
+> justru di tempat penanda presisi paling dibutuhkan. Syarat lebar tidak ada
+> hubungannya dengan pointer, jadi sudah dicabut dari JS **dan** dari aturan CSS
+> `cursor: none`. `verify.mjs` B8 sekarang mengujinya di **900px** supaya regresi
+> yang sama tidak bisa kembali diam-diam.
 
 1. **Entrance hero (sekali)** — 3 baris headline naik dari mask (`motion.span`,
    `y: 110% → 0`, `DUR.kinetic 1.0s`, delay 0.1/0.28/0.34) + chrome (eyebrow/subteks/CTA)
    fade+up (delay 0.55/0.72/0.84). Tidak ada loop.
-2. **Stack kartu (sticky stack)** — ≥768px tiap section `position: sticky; top: 0;
-   min-height: 100svh; overflow: hidden`, z-index naik 10→80, radius atas 28px + bayangan
-   `0 -24px 60px -24px rgba(0,0,0,0.55)` (kecuali Hero). Penggulir membuat kartu berikutnya
-   menutupi kartu sebelumnya seperti tumpukan — murni CSS, tanpa listener. <768px pin
-   dilepas (normal flow) dengan overlap halus `margin-top: -28px` supaya konten section yang
-   lebih tinggi dari viewport tetap terbaca penuh.
+2. **Stack kartu — 2 section saja** — `tentang` lalu `perdana`, kartu `position: sticky;
+   top: 0; min-height: 100svh; overflow: hidden`, z-index 20/30, radius atas 28px +
+   bayangan `0 -24px 60px -24px rgba(0,0,0,0.55)`. Penggulir membuat `perdana` menutupi
+   `tentang` — murni CSS, tanpa listener. Enam section lain **tidak** punya efek overlap:
+   lima di antaranya pakai garis rambut 1px dalam flow normal, Hero tanpa radius. Batas
+   ini pilihan desain: section yang menumpuk terlalu banyak membuat halaman terasa
+   berantakan dan setiap gulir kehilangan konteks.
 3. **Reveal saat scroll (IO)** — `.reveal-group`/`.reveal` disembunyikan di bawah fold dan
    diberi kelas `is-in-view` oleh IntersectionObserver; fade+up 24px, stagger 80ms per anak
    (CSS). Kelas hanya dipasang JS saat `MQ.motion` cocok; tanpa JS semuanya langsung terlihat.
@@ -278,16 +353,35 @@ yang sama persis.
 8. **Navbar** — transparan di atas → blur + solid + border emas setelah scroll (listener
    rAF). Menu mobile = panel CSS + `role="dialog"`, body terkunci, Esc menutup.
 
-### Overlap antar-section (stack kartu)
+### Overlap antar-section — maksimal 2
 
-Perbatasan antar section bukan potongan kaku: setiap section adalah kartu yang menumpuk di
-atas kartu sebelumnya. Yang membedakan perasaan "tumpukan" dari sekadar halaman panjang:
+Efek tumpang-tindih dipakai **tepat dua kali**, langsung di bawah Hero: `tentang` lalu
+`perdana`. Enam section sisanya tidak punya efek apa pun — lima pakai garis rambut 1px.
 
-| Bagian | Cara menumpuk |
+Syarat pin **dua-duanya** dan keduanya wajib:
+
+```
+@media (min-width: 1024px) and (min-height: 720px)
+```
+
+Lebar saja tidak cukup, dan tinggi saja tidak cukup. Diuji, bukan ditebak: pada 768–900px
+lebar, isi `perdana` 763px (teks membungkus lebih sering) sehingga pin di sana **memotong
+isi** — ekor section tidak pernah terjangkau. Di bawah ambang mana pun, kedua section
+kembali flow normal dengan radius/bayangan/overlap 28px.
+
+Padding adaptif untuk section yang ter-pin diletakkan di `@layer utilities`, bukan
+`components`: utility Tailwind selalu mengalahkan komponen, jadi aturan yang sama di
+`components` tidak akan pernah berlaku.
+
+| Kondisi | Hasil |
 |---|---|
-| ≥768px | Putaran penuh `position: sticky; top: 0` — kartu berikut menutupi kartu sebelumnya saat scroll |
-| <768px | Normal flow + `margin-top: -28px` (selain yang pertama) + z-index bertingkat; konten panjang tidak pernah terpotong |
-| `prefers-reduced-motion: reduce` | Semua kartu kembali `position: relative`, tanpa radius/bayangan/overlap — urutan normal |
+| ≥1024px **dan** ≥720px | `tentang` & `perdana` `position: sticky; top: 0`, radius 28px + bayangan; `perdana` menutupi `tentang` |
+| Di luar itu | Flow normal; kedua kartu dapat radius/bayangan/overlap 28px tanpa pin |
+| `prefers-reduced-motion: reduce` | Keduanya `position: relative`, tanpa radius/bayangan/overlap |
+
+> `Section.tsx` punya prop `stack` (`card` / `rule`) untuk memetakan ke modifier
+> `.stack-wrap--*`. Default-nya tanpa efek — jadi section baru tidak diam-diam mewarisi
+> overlap.
 
 ### Alignment per section
 
@@ -317,7 +411,7 @@ gradasi tidak restart. Reduced-motion: teks langsung utuh, tanpa wrapper animasi
 tween berbasis delta tetap). `html[data-cursor-visible]` / `data-cursor-hover` /
 `data-cursor-pressed` jadi satu-satunya sumber state CSS (ukuran cincin lewat transisi CSS;
 margin negatif ikut menyesuaikan agar pusat cincin tetap di pointer). Portal ke
-`document.body`, `pointer-events: none`, aktif hanya saat `MQ.motionFineWide`.
+`document.body`, `pointer-events: none`, aktif hanya saat `MQ.motionFine`.
 
 ### Magnetic pull
 
@@ -390,9 +484,11 @@ Mobile-first, dibuka dengan `sm` 640 · `md` 768 · `lg` 1024 · `xl` 1280.
 
 | Breakpoint | Yang berubah |
 |---|---|
-| <768px | Stack kartu jadi normal flow + overlap `-28px`; kursor kustom & magnet mati |
-| ≥768px | Sticky stack penuh (kartu menumpuk), radius + bayangan |
+| <768px | Canvas 3D tidak pernah dibuat; kursor kustom & magnet mati |
+| ≥768px | Scene 3D hero boleh hidup (`MQ.motionScene`) |
 | ≥1024px | Parallax (hero ambient + DNA) & kursor kustom aktif (pointer fine) |
+| ≥1024px **dan** ≥720px | `tentang` + `perdana` di-pin sebagai kartu bertumpuk |
+| ≥1280px | Objek 3D hero bergeser ke kanan (`cx = 0.72 w`) + scrim jadi gradien linear |
 | `orientation: landscape` + `max-height: 500px` | Hero tidak lagi memaksa tinggi layar, petunjuk scroll disembunyikan |
 
 Detail penting:
@@ -419,14 +515,17 @@ fokus dikembalikan ke tombol pemicu saat ditutup.
 | File | Ukuran | gzip |
 |---|---|---|
 | `index.html` | 1.95 kB | 0.88 kB |
-| `assets/index-*.css` | 36.66 kB | 8.28 kB |
-| `assets/index-*.js` (bundle utama) | 393.09 kB | 124.63 kB |
+| `assets/index-*.css` | 36.92 kB | 8.30 kB |
+| `assets/index-*.js` (bundle utama) | 395.68 kB | 125.56 kB |
+| `assets/helixScene-*.js` (chunk async, scene 3D) | 3.85 kB | 1.92 kB |
 | `fonts/cormorant-garamond-latin-var.woff2` | 37.6 kB | — (sudah kompres) |
 | `fonts/manrope-latin-var.woff2` | 24.8 kB | — (sudah kompres) |
 
-Tidak ada chunk async — tanpa three.js, seluruh situs satu bundle. Kedua font latin
-variable di-host sendiri (total ~62 kB) dan di-`preload`, jadi tidak ada permintaan
-ke pihak ketiga sama sekali saat halaman dimuat.
+Ada **satu** chunk async: `helixScene`, di-`import()` dinamis dari `HeroCanvas`. Alasannya
+LCP, bukan ukuran: teks hero selesai digambar lebih dulu, scene menyusul dengan fade-in.
+Di bawah 768px atau saat reduced-motion, chunk itu tidak pernah diminta sama sekali.
+Kedua font latin variable di-host sendiri (total ~62 kB) dan di-`preload`, jadi tidak ada
+permintaan ke pihak ketiga sama sekali saat halaman dimuat.
 
 ---
 
@@ -487,23 +586,23 @@ Semua diukur terhadap **production build** (`npm run build` → `npm run preview
 
 Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 
-**`verify.mjs` — 94 cek lulus / 0 gagal** terhadap build yang sama. Ringkasan bagian:
+**`verify.mjs` — 111 cek lulus / 0 gagal** terhadap build yang sama. Ringkasan bagian:
 
 | Bagian | Yang dibuktikan |
 |---|---|
-| A1–A2 | Statis: tanpa gsap/lenis/three di package.json & src; `--color-gold-bronze: #a17c1b`; tanpa `--font-mono`/Space Mono/`.lenis`; tanpa animasi infinite |
-| B1 | 8 section, z-index 10→80, sticky `top:0` 100svh, radius 28px + shadow (kecuali Hero), `scroll-margin-top` 88px |
-| B2 | Headline terpecah 3 baris, teks utuh, "sains" gradien, ambient statis |
+| A1–A2 | Statis: tanpa gsap/lenis/three di package.json & src; `--color-gold-bronze: #a17c1b`; tanpa `--font-mono`/Space Mono/`.lenis`; tanpa animasi infinite; stack punya syarat mati di luar layar cukup besar **dan** dimatikan total di reduced-motion |
+| B1 | 8 section, z-index 10→80; **maksimal 2** yang di-pin (`tentang` + `perdana`), sisanya garis rambut; isi section ter-pin muat di viewport; `scroll-margin-top` 88px |
+| B2 | Headline terpecah 3 baris, teks utuh, "sains" gradien, ambient statis; **canvas 3D benar-benar menggambar** (lit-pixel > 400, maxAlpha > 120, opacity > 0.95, centroid > 0.62 × vw) + scrim ada |
 | B3 | Semua reveal terpicu, nol elemen tertinggal opacity 0 |
 | B4 | Garis progres `scaleX` tumbuh mengikuti scroll |
 | B5 | Parallax DNA bergeser (≥1024px + fine) |
-| B6 | FAQ: item pertama terbuka, `inert` tepat, buka-tutup bergantian, klikable saat sticky |
+| B6 | FAQ: item pertama terbuka, `inert` tepat, buka-tutup bergantian, tombol diklik & **tidak tertutup** section ter-pin |
 | B7 | Navbar transparan → blur + solid + border emas |
-| B8 | Cincin mengejar pointer, dot menempel, cincin berpusat |
+| B8 | Cincin mengejar pointer, dot menempel, cincin berpusat; **hidup di 900px** (regresi batas-lebar), sementara parallax tetap mati di 900px |
 | B9 | Magnet mendekat & kembali; `--mx/--my` spotlight; keduanya `hover:fine` saja |
 | B10 | Menu tersembunyi di desktop; tanpa scroll horizontal 1440px |
-| B11 | Mobile: pin dilepas, overlap `-28px`, kursor/magnet mati, menu `dialog`, Esc menutup |
-| B12 | Reduced motion: relative, tanpa radius/bayangan, teks langsung terbaca, parallax mati |
+| B11 | Mobile: canvas 3D tidak dibuat, hanya 2 section overlap `-28px`, kursor/magnet mati, menu `dialog`, Esc menutup |
+| B12 | Reduced motion: canvas 3D tidak dibuat, ambient tetap ada, relative, tanpa radius/bayangan, teks langsung terbaca |
 | B13 | Sweep 320/375/768/1024/1440: tanpa scroll horizontal, FAQ klikable |
 | B14 | **0 exception, 0 `console.error`** |
 
@@ -511,20 +610,24 @@ Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 
 | Kategori | Skor |
 |---|---|
-| Performance | **67** |
+| Performance | **61** (median 3 run; lihat catatan di bawah) |
 | Accessibility | 96 |
 | Best practices | 100 |
 | SEO | 91 |
 
-Rincian performance — **empat dari lima metrik sudah sehat, satu tidak**:
+Tiga kategori selain Performance **stabil persis** di setiap run. Performance tidak —
+ia berfluktuasi 59–65 pada tiga run berturut, dan pernah turun ke 44 ketika beban CPU
+host menyentuh 100%.
+
+Rincian performance (median 3 run) — **empat dari lima metrik sudah sehat, satu tidak**:
 
 | Metrik | Nilai | Skor | Bobot |
 |---|---|---|---|
-| FCP | 1.7 s | 91 | 10 |
-| LCP | 2.4 s | 92 | 25 |
+| FCP | 1.9 s | 86 | 10 |
+| LCP | 2.7 s | 85 | 25 |
 | CLS | 0 | 100 | 25 |
-| Speed Index | 4.5 s | 72 | 10 |
-| **TBT** | **1930 ms** | **8** | **30** |
+| Speed Index | 6.3 s | 42 | 10 |
+| **TBT** | **2350 ms** | **5** | **30** |
 
 **TBT adalah satu-satunya penahan, dan ini batas arsitektur, bukan bug.** Seluruh TBT
 berasal dari satu long task: mount React 19 + `motion`. Diukur tanpa throttling, satu
@@ -533,7 +636,30 @@ mensimulasikan CPU 4× lebih lambat, jadi task yang sama muncul sebagai ~1–1.4
 Untuk skor TBT ≥ 90 (≈ ≤ 200 ms) pekerjaan JS riil harus turun ke bawah ~50 ms, dan
 itu tidak mungkin dicapai oleh mount React + `motion` tanpa mengganti arsitekturnya.
 
-**Yang benar-benar memperbaiki angka (50 → 67):**
+**Biaya objek 3D: nol, dan ini dibuktikan langsung.** Dulu sementara ada gerbang
+`load` di `HeroCanvas` dengan alasan "menghemat TBT". Alasannya dibatalkan karena
+pengukurannya salah: TBT untuk build yang **identik** berfluktuasi 1300–3720 ms di
+mesin ini, jadi selisih segitu tidak membuktikan apa pun. Yang benar diukur langsung —
+satu frame scene:
+
+| Skenario | Biaya 1 frame |
+|---|---|
+| 1024×720 @ DPR 1 | 4.4 ms |
+| 1440×900 @ DPR 1 | 4.5 ms |
+| 1440×900 @ DPR 2 (canvas 2880×1800) | 4.9 ms |
+
+Itu ~27% dari anggaran frame 60 fps, dan mustahil menjadi long task (ambang 50 ms) yang
+dihitung TBT. Gerbang `load` lalu dicabut — ia tidak menghemat apa pun, hanya
+memperlambat objek yang justru diminta untuk tampil. Penghematan yang dipakai
+ganti: rAF **dibatalkan** saat hero keluar viewport (`IntersectionObserver`), bukan
+hanya berhenti menggambar.
+
+**Angka 67 → 61 terjadi setelah objek 3D kembali, tapi TBT bukan penyebabnya.** Selisih
+itu tidak diklaim sebagai "biaya scene" — ia konsekuensi yang lain: Speed Index turun
+72 → 42 karena hero kini punya canvas yang harus dilukis setelah LCP tercapai. Yang
+bisa dipertanggungjawabkan hanyalah biaya frame yang terukur di tabel di atas.
+
+**Yang benar-benar memperbaiki angka (50 → 67, sebelum objek 3D kembali):**
 
 | Perubahan | Efek |
 |---|---|
@@ -559,11 +685,21 @@ ikut salah. Trade-off metric-versus-kebenaran itu tidak diambil.
 3. **Ganti React** dengan render statis — opsi ini mengorbankan sistem gerak yang
    justru diwajibkan.
 
-> **Catatan tentang pengukuran.** Semua angka di atas diambil di mesin yang bebannya
-> 55–65% (browser + editor menyala bersamaan), jadi ada noise nyata: `ScriptDuration`
-> untuk build yang identik berfluktuasi 180–340 ms antar-jalankan. Angka di atas adalah
-> hasil run terakhir, bukan rata-rata. Menutup tab browser sebelum pengukuran akan
-> menurunkan TBT; TBT tetap didominasi oleh mount React.
+> **Catatan tentang pengukuran — baca sebelum membandingkan angka.**
+>
+> Semua angka diambil di mesin yang bebannya **100%** (19 proses Chrome milik pengguna
+> menyala bersamaan). Noise-nya besar dan nyata:
+>
+> | Yang diukur | Rentang untuk build identik |
+> |---|---|
+> | TBT | 1300 – 3720 ms |
+> | Performance | 44 – 68 |
+>
+> Karena itu tabel di atas memakai **median 3 run berturut**, bukan satu angka. Dan karena
+> noise sebesar itu, **selisih TBT tidak boleh dipakai untuk menyimpulkan biaya fitur.**
+> Biaya scene 3D justru diukur langsung per-frame, bukan dari selisih TBT — lihat tabel
+> biaya frame di atas. Menutup tab browser sebelum mengukur akan menaikkan skor;
+> TBT tetap didominasi oleh mount React + `motion`.
 
 ---
 

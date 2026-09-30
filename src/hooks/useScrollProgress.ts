@@ -6,11 +6,12 @@ import { useIsoLayoutEffect } from './useIsoLayoutEffect';
  * Progress 0..1 yang berjalan mengikuti scroll jendela, berdasarkan posisi
  * dokumen elemen (bukan rect-nya saat ini).
  *
- * Kenapa tidak `useScroll({ target })`? Section memakai sticky stacking, jadi
- * begitu tertahan di `top: 0` rect elemen berhenti bergerak dan progress
+ * Kenapa tidak `useScroll({ target })`? Dua section memakai sticky stacking,
+ * jadi begitu tertahan di `top: 0` rect elemen berhenti bergerak dan progress
  * berbasis rect langsung tersangkut. Posisi dokumen tetap stabil selama
  * layout, sehingga progress dihitung dari `window.scrollY` terhadap rentang
- * [top - lead*vh, top + span*vh].
+ * [top - lead*vh, top + span*vh]. Section yang tidak di-pin ikut memakainya
+ * supaya semua progress di halaman dihitung dengan cara yang sama.
  */
 export function useScrollProgress(
   ref: RefObject<HTMLElement | null>,
@@ -69,8 +70,8 @@ export function useScrollProgress(
 
     /*
      * Posisi bisa bergeser setelah pengukuran pertama: font baru selesai
-     * dimuat (swap mengubah tinggi semua teks), section lain dirender oleh
-     * `content-visibility`, atau viewport berubah. Satu ResizeObserver pada
+     * dimuat (swap mengubah tinggi semua teks), section di atas berubah tinggi
+     * karena reveal, atau viewport berubah. Satu ResizeObserver pada
      * `body` menangkap pertambahan tinggi section mana pun, jadi satu
      * observer cukup untuk seluruh halaman.
      */

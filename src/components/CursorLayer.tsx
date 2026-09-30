@@ -5,9 +5,10 @@
  * Tiga lapis keamanan (kursor kustom adalah fitur yang paling mudah merusak
  * situs kalau salah):
  *
- *  1. HANYA di pointer presisi DAN layar lebar (>=1024px). Di layar sentuh
- *     tidak ada kursor untuk disembunyikan; memaksa `cursor: none` di sana
- *     membuat pengguna kehilangan penanda sentuh sama sekali.
+ *  1. HANYA di pointer presisi (`hover: hover` + `pointer: fine`). Di layar
+ *     sentuh tidak ada kursor untuk disembunyikan; memaksa `cursor: none` di
+ *     sana membuat pengguna kehilangan penanda sentuh sama sekali. Batas lebar
+ *     tidak dipasang — kursor harus tetap hidup di jendela sempit.
  *  2. HANYA saat reduced-motion tidak aktif. Cincin yang mengejar kursor
  *     adalah gerakan terus-menerus.
  *  3. Dirender lewat portal ke <body> dengan `position: fixed` dan
@@ -27,13 +28,18 @@ import { useMediaQuery } from '../hooks/useMediaQuery';
 import { subscribeHoverState } from '../hooks/useMagnetic';
 
 export function CursorLayer() {
-  const fineWide = useMediaQuery(MQ.motionFineWide);
+  const fine = useMediaQuery(MQ.motionFine);
   const reduce = useReducedMotion();
   // Gerbang dirender, bukan hanya dicek di dalam effect: layer yang tidak
   // aktif tidak boleh ada sama sekali di DOM. Selain hemat kerja, ini
   // menutup celah nyata — cincin yang menganggur di titik (0,0) memakai margin
   // negatif agar berpusat di pointer, jadi kotakunya bergeser keluar viewport.
-  const active = fineWide && !reduce;
+  //
+  // Gerbangnya `MQ.motionFine` (pointer presisi), BUKAN `MQ.motionFineWide`.
+  // Batas min-width sengaja tidak dipakai: kursor kustom adalah penanda
+  // presisi, bukan fitur luxury, dan di jendela 900–1023px (laptop yang
+  // dipakai disempitkan, monitor yang di-zoom) ia tetap harus hidup.
+  const active = fine && !reduce;
 
   const dotRef = useRef<HTMLDivElement | null>(null);
   const ringRef = useRef<HTMLDivElement | null>(null);
@@ -44,7 +50,7 @@ export function CursorLayer() {
     const html = document.documentElement;
     if (!dot || !ring) return;
 
-    const fineWide = window.matchMedia(MQ.motionFineWide);
+    const fine = window.matchMedia(MQ.motionFine);
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
 
     let raf = 0;
@@ -79,7 +85,7 @@ export function CursorLayer() {
 
     const on = () => {
       if (running) return;
-      if (!fineWide.matches || reduce.matches) return;
+      if (!fine.matches || reduce.matches) return;
       running = true;
       html.setAttribute('data-custom-cursor', 'on');
       last = performance.now();
@@ -106,8 +112,8 @@ export function CursorLayer() {
     const onDown = () => html.setAttribute('data-cursor-pressed', 'true');
     const onUp = () => html.removeAttribute('data-cursor-pressed');
 
-    const fineWideChanged = () => {
-      if (fineWide.matches && !reduce.matches) on();
+    const fineChanged = () => {
+      if (fine.matches && !reduce.matches) on();
       else off();
     };
     const reduceChanged = () => {
@@ -125,7 +131,7 @@ export function CursorLayer() {
     document.addEventListener('mouseenter', onDocEnter);
     window.addEventListener('pointerdown', onDown);
     window.addEventListener('pointerup', onUp);
-    fineWide.addEventListener('change', fineWideChanged);
+    fine.addEventListener('change', fineChanged);
     reduce.addEventListener('change', reduceChanged);
     on();
 
@@ -135,7 +141,7 @@ export function CursorLayer() {
       document.removeEventListener('mouseenter', onDocEnter);
       window.removeEventListener('pointerdown', onDown);
       window.removeEventListener('pointerup', onUp);
-      fineWide.removeEventListener('change', fineWideChanged);
+      fine.removeEventListener('change', fineChanged);
       reduce.removeEventListener('change', reduceChanged);
       unsubHover();
       html.removeAttribute('data-custom-cursor');

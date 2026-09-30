@@ -19,7 +19,7 @@ import { PERDANA } from '../content';
 
 export function PerdanaInfo() {
   return (
-    <Section id="perdana" z={30} card>
+    <Section id="perdana" z={30} stack card>
       <div className="grid gap-12 lg:grid-cols-[1fr_1.05fr] lg:gap-16">
         <div className="accent-rule-l">
           <Eyebrow>{PERDANA.eyebrow}</Eyebrow>

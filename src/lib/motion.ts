@@ -20,12 +20,19 @@
 export const MQ = {
   /** Gerak diizinkan (bukan reduced-motion). */
   motion: '(prefers-reduced-motion: no-preference)',
-  /** Gerak + pointer presisi: magnet cerita. */
+  /** Gerak + pointer presisi: magnet cerita & kursor kustom. */
   motionFine:
     '(prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine)',
-  /** Gerak + pointer presisi + layar lebar: kursor kustom & parallax. */
+  /** Gerak + pointer presisi + layar lebar: parallax mouse yang mahal. */
   motionFineWide:
     '(prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) and (min-width: 1024px)',
+  /**
+   * Gerbang scene 3D hero. Lebar saja, tanpa syarat pointer: scene berjalan
+   * dari animasinya sendiri, dan pointer hanya memiringkan sedikit — mouse
+   * tidak perlu ada supaya DNA tetap berputar.
+   * Batas 768px supaya tidak membebani baterai ponsel.
+   */
+  motionScene: '(prefers-reduced-motion: no-preference) and (min-width: 768px)',
 } as const;
 
 /* ---------------------------------------------------------------------------

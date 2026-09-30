@@ -88,8 +88,19 @@ console.log('\n=== A1. DEPENDENSI & SUMBER BERSIH ===');
     const text = raw
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/\/\/.*$/gm, '');
-    for (const pat of ["from 'gsap", 'from "gsap', 'ScrollTrigger', 'SplitText', 'lenis',
-      'three', 'HeroCanvas', 'useSmoothScroll', 'useKineticText', 'useGsapMedia']) {
+    /*
+     * Daftar library yang benar-benar dilarang. Perhatikan `three` ditulis
+     * sebagai pola IMPOR, bukan substring polos — substring polos akan ikut
+     * menangkap path direktori `src/three/` milik renderer sendiri. three.js
+     * tidak lagi dipakai di sini: objek 3D hero digambar oleh renderer Canvas
+     * 2D milik sendiri (src/three/helixScene.ts) supaya nol dependency dan nol
+     * kompilasi shader saat load. Yang dilarang di sini adalah keberadaan paket.
+     */
+    for (const pat of [
+      "from 'gsap", 'from "gsap', 'ScrollTrigger', 'SplitText', 'lenis',
+      "from 'three", 'from "three', "'three/", 'THREE.', 'WebGLRenderingContext',
+      'useSmoothScroll', 'useKineticText', 'useGsapMedia',
+    ]) {
       if (text.includes(pat)) { bad.push(f.replace(ROOT, '') + ' -> ' + pat); }
     }
   }
@@ -109,9 +120,20 @@ console.log('\n=== A2. TOKEN & CSS ===');
   check('index.html tidak memuat Space Mono', !html.includes('Space+Mono'));
   check('Tidak ada blok .lenis* di CSS', !css.includes('.lenis'));
   check('Tidak ada animasi infinite hero-ambient', !css.includes('infinite'));
-  check('Stack mobile & reduced-motion override ada',
-    css.includes('@media (max-width: 767px)') && css.includes('prefers-reduced-motion: reduce') &&
-      css.includes('.stack-wrap {'));
+  /*
+   * Dulu dicek pakai `@media (max-width: 767px)`. Sekarang blok itu hilang
+   * dengan sengaja: pin tidak lagi dibalik oleh lebar, tapi oleh satu syarat
+   * gabung (lebar DAN tinggi). Yang dijaga di sini adalah akibatnya, yaitu
+   * ada kondisi yang mematikan `--stack`, dan itu harus ada baik di
+   * reduced-motion maupun di luar layar yang cukup besar.
+   */
+  check('Stack punya kondisi mati di luar layar cukup besar',
+    /@media \(min-width: 1024px\) and \(min-height: 720px\)[\s\S]*?\.stack-wrap--stack \{\s*position: sticky/.test(css),
+    'syarat pin tidak ditemukan');
+  check('Stack dimatikan total di prefers-reduced-motion',
+    css.includes('prefers-reduced-motion: reduce') &&
+      /prefers-reduced-motion: reduce[\s\S]*?\.stack-wrap--stack \{[\s\S]*?position: relative !important/.test(css),
+    'override reduced-motion untuk --stack tidak ditemukan');
 }
 
 /* ==================================================================
@@ -258,7 +280,7 @@ async function goto() {
 
 /* ---------------------------------------------------------- DESKTOP */
 
-console.log('\n=== B1. DESKTOP 1440x900: STACKING KARTU ===');
+console.log('\n=== B1. DESKTOP 1440x900: SEKAHITAN KARTU BERCARD, SISANYA GARIS RAMBUT ===');
 {
   await setViewport(1440, 900, false);
   await setMotion('no-preference', false);
@@ -268,6 +290,8 @@ console.log('\n=== B1. DESKTOP 1440x900: STACKING KARTU ===');
     const secs = [...document.querySelectorAll('#top > section.stack-wrap')];
     return secs.map((s) => {
       const cs = getComputedStyle(s);
+      const shell = s.querySelector('.shell');
+      const scs = shell ? getComputedStyle(shell) : null;
       return {
         id: s.id || '(hero)',
         z: Number(cs.zIndex),
@@ -276,7 +300,19 @@ console.log('\n=== B1. DESKTOP 1440x900: STACKING KARTU ===');
         minH: cs.minHeight,
         radius: cs.borderTopLeftRadius,
         shadow: cs.boxShadow !== 'none',
+        borderTop: cs.borderTopWidth,
+        rule: s.classList.contains('stack-wrap--rule'),
+        card: s.classList.contains('stack-wrap--card'),
         scrollMargin: cs.scrollMarginTop,
+        h: Math.round(s.getBoundingClientRect().height),
+        contentH: shell
+          ? Math.round(
+              shell.getBoundingClientRect().height -
+                (parseFloat(scs.paddingTop) || 0) -
+                (parseFloat(scs.paddingBottom) || 0),
+            )
+          : 0,
+        padT: scs ? Math.round(parseFloat(scs.paddingTop) || 0) : 0,
       };
     });
   })()`);
@@ -284,15 +320,39 @@ console.log('\n=== B1. DESKTOP 1440x900: STACKING KARTU ===');
   check('Delapan section dalam <main>', count === 8, count + ' section');
   const zok = stack.map((s) => s.z).join(',') === '10,20,30,40,50,60,70,80';
   check('z-index naik 10..80 sesuai urutan', zok, stack.map((s) => s.z).join(','));
-  const pinned = stack.every(
-    (s) => s.pos === 'sticky' && s.top === '0px' && parseFloat(s.minH) >= 800,
-  );
-  check('Semua section sticky top:0 min-height:100svh (desktop)', pinned,
-    stack.map((s) => s.pos + '/' + s.minH).join(' '));
-  check('Hanya Hero tanpa kartu; sisanya radius+shadow',
-    stack[0].radius === '0px' && !stack[0].shadow &&
-      stack.slice(1).every((s) => s.radius === '28px' && s.shadow),
-    'radius hero=' + stack[0].radius);
+
+  /*
+   * Persyaratannya berubah: efek menumpuk maksimal DUA section, bukan semua.
+   * Section yang dipilih adalah `tentang` dan `perdana` — keduanya langsung
+   * setelah hero, jadi efeknya kebaca di awal scroll.
+   */
+  const pinnedIds = stack.filter((s) => s.pos === 'sticky').map((s) => s.id);
+  check('Maksimal 2 section yang di-pin', pinnedIds.length === 2, pinnedIds.join('+') || 'tidak ada');
+  check('Dua section itu: tentang + Perdana',
+    pinnedIds.join(',') === 'tentang,perdana', pinnedIds.join(','));
+  check('Section di-pin: top:0 + min-height 100svh',
+    pinnedIds.length === 2 && stack.filter((s) => s.pos === 'sticky')
+      .every((s) => s.top === '0px' && parseFloat(s.minH) >= 800),
+    stack.filter((s) => s.pos === 'sticky').map((s) => s.pos + '/' + s.minH).join(' '));
+
+  const pinnedAll = stack.filter((s) => s.pos === 'sticky');
+  check('Isi section di-pin muat di viewport (tidak ada ekor tak terjangkau)',
+    pinnedAll.every((s) => s.padT + s.contentH <= 900),
+    pinnedAll.map((s) => s.id + ' ' + (s.padT + s.contentH) + 'px').join(' '));
+
+  const cards = stack.filter((s) => s.card);
+  check('Tepat 2 section memakai kartu (radius 28px + shadow)',
+    cards.length === 2 && cards.every((s) => s.radius === '28px' && s.shadow),
+    cards.map((s) => s.id + ' r=' + s.radius).join(' '));
+  check('Hero tanpa radius/bayangan, section lain tanpa kartu',
+    stack[0].radius === '0px' && !stack[0].shadow && !stack[0].card &&
+      stack.slice(1).filter((s) => !s.card).every((s) => s.radius === '0px' && !s.shadow),
+    'hero=' + stack[0].radius + '/' + stack[0].shadow);
+  check('Lima section biasa memakai garis rambut, bukan kartu',
+    stack.filter((s) => s.rule).length === 5 &&
+      stack.filter((s) => s.rule).every((s) => parseFloat(s.borderTop) === 1 && !s.card),
+    stack.filter((s) => s.rule).map((s) => s.id).join(','));
+
   check('scroll-margin-top 88px untuk target anchor', stack.every((s) => s.scrollMargin === '88px'),
     stack.map((s) => s.scrollMargin).join(','));
 
@@ -305,21 +365,47 @@ console.log('\n=== B1. DESKTOP 1440x900: STACKING KARTU ===');
     'scrollWidth=' + overflow.sw + ' clientWidth=' + overflow.vw);
 }
 
-console.log('\n=== B2. HERO: KINETIC TYPOGRAPHY + AMBIENT ===');
+console.log('\n=== B2. HERO: KINETIC TYPOGRAPHY + AMBIENT + OBJEK 3D ===');
 {
-  const hero = await evalJs(String.raw`(() => {
+  const hero = await evalJs(String.raw`(async () => {
     const h1 = document.querySelector('#top h1');
     const lines = [...h1.querySelectorAll('.kinetic-line')];
     const accent = lines.find((l) => l.className.includes('text-gold-gradient'));
-    return {
+    // Tunggu scene selesai dimuat dan fade-in-nya selesai.
+    await new Promise((r) => setTimeout(r, 2500));
+    const cv = document.querySelector('canvas');
+    const out = {
       text: window.__sq(h1.textContent),
       lines: lines.length,
       lineY: lines.map((l) => window.__xform(l).y),
       accentGrad: accent ? getComputedStyle(accent).backgroundImage.includes('gradient') : false,
       ambient: !!document.querySelector('.hero-ambient'),
       ambientAnim: getComputedStyle(document.querySelector('.hero-ambient')).animationName,
+      scrim: !!document.querySelector('.hero-scrim'),
       hint: !!document.querySelector('.hero-scroll-hint'),
+      canvas: !!cv,
+      canvasOpacity: cv ? Number(getComputedStyle(cv).opacity) : 0,
+      lit: 0,
+      maxAlpha: 0,
+      cx: 0,
+      vw: window.innerWidth,
     };
+    if (cv) {
+      // Kanvas harus benar-benar punya piksel bercahaya. Canvas yang ada tapi
+      // kosong adalah kegagalan yang tidak terlihat dari DOM saja.
+      const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+      let lit = 0, maxA = 0, sumX = 0, sumW = 0;
+      for (let y = 0; y < cv.height; y += 3) {
+        for (let x = 0; x < cv.width; x += 3) {
+          const a = d[(y * cv.width + x) * 4 + 3];
+          if (a > 8) { lit++; sumX += x * a; sumW += a; if (a > maxA) maxA = a; }
+        }
+      }
+      out.lit = lit;
+      out.maxAlpha = maxA;
+      out.cx = sumW ? Math.round(sumX / sumW) : 0;
+    }
+    return out;
   })()`);
   check('Headline terpecah jadi baris (bukan huruf)', hero.lines >= 2, hero.lines + ' baris');
   check('Teks headline utuh', hero.text.includes('Asah nalar') && hero.text.includes('sains'),
@@ -330,7 +416,19 @@ console.log('\n=== B2. HERO: KINETIC TYPOGRAPHY + AMBIENT ===');
   check('Ambient glow CSS ada & statis (tanpa animasi)',
     hero.ambient && (hero.ambientAnim === 'none' || hero.ambientAnim === ''),
     'animation=' + hero.ambientAnim);
+  check('Scrim hero ada (melindungi teks dari objek 3D)', hero.scrim);
   check('Scroll hint ada', hero.hint);
+  check('Kanvas objek 3D dibuat di >=768px', hero.canvas);
+  check('Kanvas 3D benar-benar menggambar (bukan bidang kosong)',
+    hero.canvas && hero.lit > 400 && hero.maxAlpha > 120,
+    'lit=' + hero.lit + ' maxAlpha=' + hero.maxAlpha);
+  check('Kanvas 3D fade-in selesai', hero.canvasOpacity > 0.95, 'opacity=' + hero.canvasOpacity);
+  /*
+   * Objek harus di kanan headline, bukan menindihnya. Pada 1440px blok teks
+   * berakhir di sekitar 832px, jadi pusat massa objek wajib di kanan itu.
+   */
+  check('Objek 3D berada di kanan, tidak menabrak headline',
+    hero.cx > hero.vw * 0.62, 'centroid=' + hero.cx + ' dari ' + hero.vw);
 }
 
 console.log('\n=== B3. REVEAL SAAT SCROLL (IntersectionObserver) ===');
@@ -410,11 +508,17 @@ console.log('\n=== B6. FAQ AKORDEON (CSS grid-rows) ===');
 {
   const faq = await evalJs(String.raw`(async () => {
     const sec = document.getElementById('faq');
-    // Gulir sampai section benar-benar ter-pin (top:0), lalu biarkan transisi
-    // reveal selesai — di sinilah klik harus tetap mendarat pada tombolnya.
-    window.scrollTo(0, window.__docTop['faq'] + 200);
+    /*
+     * FAQ sekarang section biasa (flow normal, bukan kartu yang di-pin), jadi
+     * yang diuji bukan lagi "top = 0" — itumilik mechanism yang sudah tidak
+     * dipakai di sini. Yang tetap penting dan justru lebih ketat sekarang:
+     * section ini harus muncul utuh di layar, DAN tidak boleh ada section
+     * ter-pin (tentang / Perdana) yang menutupi tombolnya. Dua-duanya dicek
+     * lewat elementFromPoint di bawah.
+     */
+    sec.scrollIntoView({ block: 'start' });
     await new Promise(r => setTimeout(r, 1200));
-    const pinnedTop = Math.round(sec.getBoundingClientRect().top);
+    const sectionTop = Math.round(sec.getBoundingClientRect().top);
     const items = [...sec.querySelectorAll('.faq-item')];
     const btn = (i) => items[i].querySelector('button');
     const panel = (i) => items[i].querySelector('.faq-panel');
@@ -440,11 +544,11 @@ console.log('\n=== B6. FAQ AKORDEON (CSS grid-rows) ===');
       const at = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
       return !!(at && (at === btn(0) || btn(0).contains(at)));
     })();
-    return { pinnedTop, int0, afterOpen, closed, clickable };
+    return { sectionTop, int0, afterOpen, closed, clickable };
   })()`);
   check('Item FAQ muncul', faq.int0.items >= 5, faq.int0.items + ' item');
-  check('Section FAQ benar-benar ter-pin saat diuji', faq.pinnedTop === 0,
-    'top=' + faq.pinnedTop + 'px');
+  check('Section FAQ masuk penuh ke layar', Math.abs(faq.sectionTop) < 120,
+    'top=' + faq.sectionTop + 'px');
   check('Panel pertama terbuka awal', faq.int0.open > 15, 'h=' + faq.int0.open);
   check('Panel tertutup punya inert', faq.int0.inert1 === true);
   check('Klik membuka item kedua & menutup item pertama', faq.afterOpen.openIdx === 1,
@@ -453,7 +557,7 @@ console.log('\n=== B6. FAQ AKORDEON (CSS grid-rows) ===');
   check('Panel pertama ikut inert saat tertutup', faq.afterOpen.inert0 === true);
   check('Klik kedua menutup kembali', faq.closed.openIdx === -1 && faq.closed.h1 < 5,
     'h1=' + faq.closed.h1);
-  check('Tombol FAQ bisa diklik saat section sticky', faq.clickable);
+  check('Tombol FAQ diklik, tidak tertutup section ter-pin', faq.clickable);
 }
 
 console.log('\n=== B7. NAVBAR: TRANSPARAN -> SOLID+BLUR ===');
@@ -463,18 +567,47 @@ console.log('\n=== B7. NAVBAR: TRANSPARAN -> SOLID+BLUR ===');
     // posisi atas dulu supaya state navbar terukur dari kondisi segar. Tunggu
     // transisi background navbar (0.5s) benar-benar selesai.
     window.scrollTo(0, 0);
-    await new Promise(r => setTimeout(r, 1100));
     const h = document.querySelector('header');
+    // Sama seperti di bawah: tunggu transisi mundur selesai. Bagian ini
+    // dimulai dari posisi yang sudah digulir (bagian sebelumnya menguji FAQ),
+    // jadi navbar sedang dalam keadaan solid dan harus kembali transparan.
+    const settledTop = await (async () => {
+      let prev = null;
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 150));
+        const now = getComputedStyle(h).backgroundColor;
+        if (prev !== null && now === prev) return now;
+        prev = now;
+      }
+      return getComputedStyle(h).backgroundColor;
+    })();
     const top = {
       y: window.scrollY,
-      bg: getComputedStyle(h).backgroundColor,
+      bg: settledTop,
       blur: getComputedStyle(h).backdropFilter,
     };
     window.scrollTo(0, 600);
-    await new Promise(r => setTimeout(r, 700));
+    /*
+     * Tunggu transisi navbar benar-benar selesai, bukan menebak durasinya.
+     * Timeout tetap sebelumnya (700ms) menghasilkan sampel 0,43–0,68 pada
+     * lima percobaan berturut — nilai yang benar 0,72, tapi terjaring di tengah
+     * jalan karena mesin sedang load. Polling sampai nilainya dua kali sama
+     * itu mengukur keadaan sebenarnya, dan tidak bisa lulus kalau transisi
+     * benar-benar tidak pernah tuntas.
+     */
+    const settled = await (async () => {
+      let prev = null;
+      for (let i = 0; i < 20; i++) {
+        await new Promise(r => setTimeout(r, 150));
+        const now = getComputedStyle(h).backgroundColor;
+        if (prev !== null && now === prev) return now;
+        prev = now;
+      }
+      return getComputedStyle(h).backgroundColor;
+    })();
     const gone = {
       y: window.scrollY,
-      bg: getComputedStyle(h).backgroundColor,
+      bg: settled,
       blur: getComputedStyle(h).backdropFilter,
       border: getComputedStyle(h).borderBottomColor,
     };
@@ -488,7 +621,7 @@ console.log('\n=== B7. NAVBAR: TRANSPARAN -> SOLID+BLUR ===');
   check('Border emas setelah scroll', alphaOf(nb.gone.border) > 0.05, nb.gone.border);
 }
 
-console.log('\n=== B8. KURSOR KUSTOM (>=1024px + pointer fine) ===');
+console.log('\n=== B8. KURSOR KUSTOM (pointer fine, tanpa batas lebar) ===');
 {
   const on = await evalJs(String.raw`(() => ({
     attr: document.documentElement.getAttribute('data-custom-cursor'),
@@ -520,6 +653,36 @@ console.log('\n=== B8. KURSOR KUSTOM (>=1024px + pointer fine) ===');
   check('Titik menempel tepat di pointer', !!move.dotAt,
     'dot=(' + move.dot.x.toFixed(0) + ',' + move.dot.y.toFixed(0) + ')');
   check('Cincin berpusat di pointer', !!move.centered);
+
+  /*
+   * Regresi yang pernah nyata terjadi: gerbang kursor sempat diketatkan jadi
+   * `min-width: 1024px`, sehingga kursor hilang di jendela yang lebih sempit
+   * padahal pointer-nya presisi. Kursor adalah penanda presisi, bukan fitur
+   * luxury, jadi wajib harus hidup di lebar berapa pun selama pointer
+   * presisi. Diuji di 900px — di bawah ambang parallax, tapi jauh di atas
+   * lebar ponsel.
+   */
+  await setViewport(900, 800, false);
+  await setMotion('no-preference', false);
+  await goto();
+  const narrow = await evalJs(String.raw`(() => ({
+    attr: document.documentElement.getAttribute('data-custom-cursor'),
+    ring: !!document.querySelector('.cursor-ring'),
+    bodyCursor: getComputedStyle(document.body).cursor,
+  }))()`);
+  check('Kursor tetap hidup di 900px + pointer fine',
+    narrow.attr === 'on' && narrow.ring && narrow.bodyCursor === 'none',
+    'attr=' + narrow.attr + ' ring=' + narrow.ring + ' cursor=' + narrow.bodyCursor);
+  check('Parallax tetap mati di 900px (batasnya 1024px)',
+    await evalJs(String.raw`(() => {
+      const el = document.querySelector('[data-parallax]');
+      if (!el) return false;
+      const t = getComputedStyle(el).transform;
+      return t === 'none' || t === 'matrix(1, 0, 0, 1, 0, 0)';
+    })()`), 'transform ambient di 900px');
+  await setViewport(1440, 900, false);
+  await setMotion('no-preference', false);
+  await goto();
 }
 
 console.log('\n=== B9. MAGNET & SPOTLIGHT (hanya hover:fine) ===');
@@ -599,18 +762,33 @@ console.log('\n=== B11. MOBILE 390x844: PIN DILEPAS, KURSOR/MAGNET MATI ===');
       fine: matchMedia('(pointer: fine)').matches,
       coarse: matchMedia('(pointer: coarse)').matches,
       pos: secs.map((s) => getComputedStyle(s).position),
+      ids: secs.map((s) => s.id || '(hero)'),
+      stacked: secs.map((s) => s.classList.contains('stack-wrap--stack')),
       mt: secs.map((s) => getComputedStyle(s).marginTop),
       zs: secs.map((s) => getComputedStyle(s).zIndex),
+      canvas: !!document.querySelector('canvas'),
     };
   })()`);
   check('Emulasi pointer sentuh aktif', env.coarse && !env.fine,
     'coarse=' + env.coarse + ' fine=' + env.fine);
   check('Section tidak lagi position:sticky (flow normal)', env.pos.every((p) => p === 'relative'),
     env.pos.join(','));
-  check('Overlap ringan -28px antar kartu', env.mt.slice(1).every((m) => m === '-28px'),
-    env.mt.join(','));
+  /*
+   * Hanya dua section yang boleh overlap. Di mobile keduanya kehilangan pin,
+   * jadi kesan bertumpuk datang lewat margin-top -28px — section biasa tetap
+   * flow penuh tanpa overlap.
+   */
+  const stackedIdx = env.stacked.map((v, i) => (v ? i : -1)).filter((i) => i >= 0);
+  check('Tepat 2 section yang ditumpuk', stackedIdx.length === 2, stackedIdx.length + ' section');
+  check('Hanya kartu menumpuk yang overlap -28px',
+    stackedIdx.length === 2 &&
+      stackedIdx.every((i) => env.mt[i] === '-28px') &&
+      env.mt.filter((m, i) => !env.stacked[i] && m !== '0px').length === 0,
+    env.ids.map((id, i) => id + '=' + env.mt[i]).join(' '));
   check('z-index bertingkat tetap dipertahankan', env.zs.join(',') === '10,20,30,40,50,60,70,80',
     env.zs.join(','));
+  check('Objek 3D hero tidak dibuat di bawah 768px', env.canvas === false,
+    env.canvas ? 'canvas ada' : 'canvas tidak ada');
 
   const mob = await evalJs(String.raw`(() => {
     const m = document.querySelector('.magnetic');
@@ -687,11 +865,16 @@ console.log('\n=== B12. REDUCED MOTION: SEMUA MATI TOTAL ===');
       parallaxTransforms: parallaxEls.map((el) => getComputedStyle(el).transform),
       scrollBehavior: getComputedStyle(document.documentElement).scrollBehavior,
       scrollable: document.body.scrollHeight > window.innerHeight,
+      canvas: !!document.querySelector('canvas'),
+      ambient: !!document.querySelector('.hero-ambient'),
     };
   })()`);
   check('Semua section relative (pin dilepas)', rm.pos.every((p) => p === 'relative'), rm.pos.join(','));
   check('Kartu tanpa radius & bayangan', rm.radius.every((r) => r === '0px') && rm.shadow.every((s) => !s));
   check('Overlap dinolkan', rm.mt.every((m) => m === '0px'), rm.mt.join(','));
+  check('Objek 3D hero tidak dibuat sama sekali', rm.canvas === false,
+    rm.canvas ? 'canvas ada' : 'canvas tidak ada');
+  check('Ambient glow tetap ada (lapisan dasar hero)', rm.ambient);
   check('Headline langsung terbaca', rm.h1Opacity > 0.9, 'opacity=' + rm.h1Opacity);
   check('Teks headline utuh', rm.h1Text.includes('Asah nalar') && rm.h1Text.includes('sains'),
     '"' + rm.h1Text + '"');
