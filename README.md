@@ -2,9 +2,15 @@
 
 Landing page satu halaman untuk **Helixa Olympiad**, olimpiade online Matematika & Biologi
 untuk siswa SMA di Indonesia. Static site tanpa backend, dibangun dengan Vite + React +
-TypeScript + Tailwind v4. Stack gerak resmi: paket **`motion`** (Motion for React) + CSS
-native + IntersectionObserver, plus satu renderer Canvas 2D sendiri untuk objek 3D hero.
-Tanpa GSAP / Lenis / ScrollTrigger / SplitText / three.js, tanpa WebGL, tanpa scroll-jacking.
+TypeScript + Tailwind v4.
+
+Stack gerak resmi: paket **`motion`** (Motion for React) + CSS native + IntersectionObserver,
+ditambah **three.js** untuk dua objek 3D (pusaran partikel DNA di hero, armillary di Aturan) dan
+**GSAP** hanya untuk clock smooth scroll. Semua tambahan itu di balik satu gerbang:
+`useMotionMode()`.
+
+> Tanpa Lenis / ScrollTrigger / SplitText. Tanpa `ScrollSmoother` — alasannya ada di bagian
+> [Smooth scroll](#smooth-scroll-bukan-scrollsmoother).
 
 Prinsip desain: **80% obsidian, 10% gading, 10% emas cair.** Kalau ragu, kurangi.
 
@@ -19,9 +25,9 @@ npm run build    # output ke dist/
 npm run preview  # cek hasil build
 ```
 
-## Tiga skrip verifikasi
+## Empat skrip verifikasi
 
-Ketiganya memakai Chrome DevTools Protocol lewat WebSocket bawaan Node — tanpa
+Semuanya memakai Chrome DevTools Protocol lewat WebSocket bawaan Node — tanpa
 Puppeteer/Playwright, jadi tidak menambah dependency. Semuanya mengukur **production
 build**, bukan dev server, dan semuanya butuh server yang sudah jalan:
 
@@ -31,17 +37,24 @@ npm run build && npm run preview -- --port 4200 --strictPort
 
 # terminal 2
 npm run check:responsive   # 11 viewport: overflow, teks terpotong, target sentuh
-npm run check:verify       # cek statis + 14 bagian perilaku & animasi di browser
+npm run check:verify       # cek statis + 16 bagian perilaku, animasi & performa
+npm run check:webgl-off    # WebGL dimatikan: hero jatuh ke SVG helix
 npm run check:lighthouse   # Lighthouse Mobile (butuh install terpisah, lihat catatan)
 ```
 
-Keduanya menerima URL sebagai argumen pertama, default `http://localhost:4200/`:
+Semuanya menerima URL sebagai argumen pertama, default `http://localhost:4200/`:
 
 ```bash
-node scripts/audit.mjs     http://localhost:4200/
-node scripts/verify.mjs    http://localhost:4200/
-node scripts/lighthouse.mjs http://localhost:4200/ lh.json
+node scripts/audit.mjs            http://localhost:4200/
+node scripts/verify.mjs           http://localhost:4200/
+node scripts/verify-webgl-off.mjs http://localhost:4200/
+node scripts/lighthouse.mjs       http://localhost:4200/ lh.json
 ```
+
+`verify-webgl-off.mjs` dipisah dari `verify.mjs` karena mematikan WebGL butuh flag saat
+Chrome **start** (`--disable-3d-apis`, setara "Disable WebGL" di DevTools > Rendering), dan
+flag tidak bisa diubah pada browser yang sudah jalan. `verify.mjs` memakai satu instance
+Chrome untuk semua bloknya, jadi kondisi itu tidak bisa diuji dari dalamnya.
 
 > **Penting:** headless Chrome default-nya `prefers-reduced-motion: reduce`. Kedua skrip
 > memaksa `no-preference` supaya animasi benar-benar diuji, dan `verify.mjs` menguji
@@ -68,24 +81,35 @@ berubah, interaksi yang benar-benar berfungsi.
 3. **Scroll reveal** — semua grup/single reveal (IntersectionObserver) terpicu setelah
    scroll penuh, nol elemen tertinggal `opacity: 0`
 4. **Garis progres** — satu elemen `scaleX`/`scaleY` tumbuh mengikuti scroll jendela
-5. **Parallax** — ornamen DNA bergeser; HANYA ≥1024px + pointer fine; dibatasi 2 titik
+5. **Parallax** — tiga simbol matematika (Σ, φ, f(x)) bergeser dengan laju berbeda; HANYA
+   ≥1024px + pointer fine; murni berbasis posisi scroll, bukan rotasi otomatis
 6. **FAQ akordeon** — CSS `grid-template-rows`, `inert` pada panel tertutup, satu-buka,
    aria-expanded, dan tombolnya diklik lewat `elementFromPoint` (bukti tidak ada section
    ter-pin yang menutupinya)
 7. **Navbar** — transparan di atas → blur + solid + border emas setelah scroll
-8. **Kursor kustom** — cincin mengejar pointer (lerp rAF), dot menempel tepat, cincin
-   berpusat; **hanya syarat pointer fine, tanpa batas lebar** — diuji hidup di 900px,
-   bukan hanya di ≥1024px
+8. **Kursor kustom** — dot 7px `#F6E7B4` memimpin (transform langsung di `pointermove`,
+   tanpa rAF), cincin 28px `#D4AF37` mengejar dengan lerp eksponensial τ ≈ 0.4s. Saat
+   hover, cincin membesar ~1.8x dan terisi tipis. **Hanya mode `rich`** (≥1024px + pointer
+   fine), dan loop interpolasinya berhenti sendiri begitu cincin menyatu
 9. **Magnet & spotlight** — tombol tertarik mendekat pointer dan kembali diam; `--mx/--my`
    spotlight diperbarui; keduanya mati di layar sentuh
-10. **Mobile** — `pointer: coarse` nyata: canvas 3D tidak pernah dibuat (<768px), pin
-    sticky dilepas (normal flow, overlap `-28px`), kursor/magnet/parallax mati, menu
-     modal `dialog` + `aria-modal`, Esc menutup
+10. **Mobile** — `pointer: coarse` nyata: **rekaman jaringan** membuktikan hanya 1 file `.js`
+    yang diunduh (bundle utama), tanpa chunk three.js maupun GSAP; canvas 3D tidak pernah
+    dibuat, pin sticky dilepas (normal flow, overlap `-28px`), kursor/magnet/parallax mati,
+    menu modal `dialog` + `aria-modal`, Esc menutup
 11. **Reduced motion** — section kembali `relative`, kartu tanpa radius/bayangan, teks
-    langsung terbaca, scroll native, parallax ditangguhkan, kursor mati, canvas 3D tidak
-     dibuat
+    langsung terbaca, scroll native, kursor mati, canvas 3D tidak dibuat, dan **nol animasi
+    CSS berjalan di seluruh halaman** (`document.getAnimations()`)
 12. **Sweep lebar** — 320/375/768/1024/1440 tanpa scroll horizontal, FAQ tetap bisa diklik
-13. **Konsol bersih** — nol exception, nol `console.error`
+13. **Bukti partikel** — framebuffer WebGL dibaca lewat `drawImage` + `getImageData` di dalam
+    halaman; motif harus berada di ≥70% lebar layar (tidak menindih headline)
+14. **Konsol bersih** — nol exception, nol `console.error`
+15. **Performa** — FPS partikel hero dan giroskop Aturan diukur lewat penghitung rAF yang
+    tidak menghitung dirinya sendiri; render loop harus **nol** callback saat semua section
+    3D jauh dari viewport, dan hidup lagi setelah kembali ke atas. Juga diperiksa bahwa
+    kedua canvas 3D tidak pernah hidup bersamaan (jaraknya 3071px)
+16. **Kursor berhenti** — di posisi scroll tanpa loop lain, interpolasi cincin harus aktif
+    saat pointer bergerak dan **nol** setelah menyatu
 
 ### Jebakan pengukuran yang sudah ditangani
 
@@ -131,10 +155,32 @@ berubah, interaksi yang benar-benar berfungsi.
      Sekarang section flow normal, jadi yang diuji lebih ketat: tombolnya diklik
      (`elementFromPoint`) dan harus benar-benar yang menutup elemen teratas — itulah
      bukti tidak ada section ter-pin yang menutupinya.
-6. **Regresi bisa hidup di dua tempat.** Kursor kustom hilang bukan karena satu baris
-   JS: `MQ.motionFineWide` **dan** aturan CSS `cursor: none` sama-sama mengunci
-   `min-width: 1024px`. Memperbaiki satu saja tidak akan terlihat. B8 sengaja menguji
-   **900px** supaya dua kondisi itu tidak bisa kembali diam-diam.
+6. **`Page.captureScreenshot` tidak menyertakan layer WebGL di Chrome headless.**
+   Percobaan A/B dengan menyembunyikan canvas lewat CSS menghasilkan **selisih nol piksel**
+   setiap kali, padahal framebuffer-nya jelas berisi partikel. A/B seperti itu hanya bisa
+   menghasilkan dua jawaban yang salah: "kosong" untuk scene yang berjalan, atau "ada isi"
+   untuk scene yang mati. Karena itu bukti partikel sekarang dibaca **in-page** —
+   `drawImage` ke canvas 2D lalu `getImageData` — yang membaca framebuffer sungguhan tanpa
+   perantara compositor. Syaratnya renderer memakai `preserveDrawingBuffer: true`.
+7. **Tunggu scene siap, jangan tunggu angka detik.** Chunk three.js 515 kB dan diunduh
+   lewat dynamic import, jadi waktu inisialisasi sangat bergantung pada beban mesin. Probe
+   dengan timeout tetap pernah mengukur canvas yang masih 300×150 (ukuran default HTML,
+   artinya `setSize` belum sempat dipanggil) dan melaporkan "nol piksel" yang sebenarnya
+   hanya artefak pengaturan waktu. Semua probe kini mem-poll kondisi siap:
+   canvas sudah ter-size **dan** fade-in selesai.
+8. **Gerbang mode device-first mengubah apa arti "viewport mobile".** `readMotionMode()`
+   memeriksa perangkat dulu, baru preferensi gerak. Jadi menguji mode `rich` di viewport
+   sempit dengan pointer fine akan mendapat `'simple'`, bukan `'rich'` — dan pemeriksaan
+   WebGL akan gagal bukan karena kodenya salah, tapi karena gerbangnya memang bekerja.
+   `Emulation.setTouchEmulationEnabled({enabled: false})` wajib selain itu, kalau tidak
+   `pointer` terbaca coarse dan `CursorLayer` merender null.
+9. **Penghitung rAF harus tidak menghitung dirinya sendiri, dan tidak boleh dipasang dua
+   kali.** Loop pengukuran memakai referensi rAF yang dibungkus lebih dulu, supaya
+   "nol frame" benar-benar berarti tidak ada yang menggambar — kalau tidak, angka nol selalu
+   bisa dicapai oleh alat pengukur. Memasang wrapper kedua di blok yang sama tanpa reload
+   membuat wrapper lama memanggil dirinya sendiri (karena ia membaca
+   `window.__nativeRaf` secara dinamis) dan langsung memicu stack overflow. Karena itu B16
+   sengaja memakai wrapper B15 apa adanya.
 
 ---
 
@@ -150,42 +196,47 @@ Helixa Olympiad/
 ├─ public/favicon.svg      # ikon emas, SVG tulen
 ├─ public/fonts/           # Cormorant Garamond + Manrope variable woff2 (SIL OFL, latin, ~62 kB)
 ├─ scripts/
-│  ├─ audit.mjs            # 11 viewport + deteksi overflow / teks terpotong / target sentuh
-│  ├─ verify.mjs           # cek statis + 14 bagian perilaku & animasi (111 cek)
-│  └─ lighthouse.mjs       # Lighthouse Mobile lewat Node API (install di luar repo)
+│  ├─ audit.mjs                # 11 viewport + deteksi overflow / teks terpotong / target sentuh
+│  ├─ verify.mjs               # cek statis + B1-B16 perilaku, animasi & performa (131 cek)
+│  ├─ verify-webgl-off.mjs     # WebGL dimatikan: hero jatuh ke SVG helix (7 cek)
+│  └─ lighthouse.mjs           # Lighthouse Mobile lewat Node API (install di luar repo)
 └─ src/
    ├─ main.tsx
    ├─ App.tsx              # Navbar → main#top (8 section) → Footer → grain → cursor
-   ├─ index.css            # design tokens, base, stacking, reveal, FAQ, blok reduced-motion
+   ├─ index.css            # design tokens, base, stacking, reveal, FAQ, kursor, blok reduced-motion
    ├─ content.ts           # SEMUA teks + REGISTER_URL + INSTAGRAM_URL
    ├─ vite-env.d.ts
    ├─ lib/
-   │  └─ motion.ts         # MQ, EASE, DUR, PARALLAX, CURSOR
+   │  └─ motion.ts         # MQ (termasuk MQ.rich), EASE, DUR, PARALLAX, CURSOR
    ├─ three/
-   │  └─ helixScene.ts     # renderer objek 3D hero — Canvas 2D, tanpa three.js
+   │  ├─ dnaParticles.ts   # 560 partikel emas → heliks DNA (three.js) — rich saja
+   │  └─ gyroscope.ts      # 4 cincin TorusGeometry wireframe (three.js) — rich saja
    ├─ hooks/
    │  ├─ useIsoLayoutEffect.ts  # useLayoutEffect aman-SSR
-   │  ├─ useMediaQuery.ts       # abonemen MQ sebagai state React (gerbang satu-satunya)
+   │  ├─ useMediaQuery.ts       # abonemen MQ sebagai state React
+   │  ├─ useMotionMode.ts       # gerbang 'reduced' | 'rich' | 'simple' — device-first
+   │  ├─ useSmoothScroll.ts     # smooth scroll GSAP (gsap.ticker + window.scrollTo)
    │  ├─ useScrollProgress.ts   # progress scroll JENDELA untuk section sticky
    │  └─ useMagnetic.ts         # registerHoverTarget + subscribeHoverState (CSS var)
    └─ components/
-      ├─ CursorLayer.tsx   # cincin emas + dot, lerp rAF time-based, portal ke body
+      ├─ CursorLayer.tsx   # dot memimpin + cincin mengejar; berhenti saat menyatu
       ├─ Navbar.tsx
-      ├─ Hero.tsx          # kinetic per baris + ambient parallax + <HeroCanvas/>
-      ├─ HeroCanvas.tsx    # pembungkus tipis: gerbang MQ.motionScene + dynamic import
+      ├─ Hero.tsx          # kinetic per baris + ambient + gerbang partikel/SVG
+      ├─ HeroParticles.tsx # pembungkus: gerbang mode rich + dynamic import + fallback
+      ├─ GyroCanvas.tsx    # mount saat dekat viewport, dispose saat jauh
       ├─ WhyHelixa.tsx     # stack card (1 dari 2 section yang di-pin)
       ├─ PerdanaInfo.tsx   # stack card (2 dari 2 section yang di-pin)
-      ├─ HowToJoin.tsx     # stack rule (garis rambut, tanpa overlap)
+      ├─ HowToJoin.tsx     # stack rule + parallax 3 simbol matematika
       ├─ JudgesPartners.tsx
-      ├─ RulesTransparency.tsx
+      ├─ RulesTransparency.tsx  # dekorasi <GyroCanvas/>
       ├─ Faq.tsx           # akordeon CSS grid-rows + inert; stack rule
       ├─ ClosingCta.tsx
       ├─ ornaments/
-      │  ├─ DnaHelix.tsx
-      │  ├─ MathSymbols.tsx
+      │  ├─ DnaHelix.tsx      # fallback SVG heliks DNA
+      │  ├─ MathSymbols.tsx   # Σ, φ, f(x) dengan parallax per-simbol
       │  └─ GrainOverlay.tsx
       └─ ui/
-         ├─ Section.tsx    # stack-wrap + z + kartu
+         ├─ Section.tsx    # stack-wrap + z + kartu (+ prop `decor`)
          ├─ Reveal.tsx     # Reveal / RevealGroup (IO, tanpa selector)
          ├─ Eyebrow.tsx
          ├─ SpotlightCard.tsx
@@ -262,68 +313,82 @@ didefinisikan sekali di `.text-gold-gradient` / `.bg-gold-gradient`.
 
 ---
 
-## Ornamen — nol gambar raster, nol WebGL
+## Ornamen — nol gambar raster, WebGL hanya di dua tempat
 
-Tidak ada satu pun gambar eksternal dan tidak ada WebGL. Ornamen berjas SVG/CSS, kecuali
-satu: objek 3D hero, yang digambar sendiri di Canvas 2D (lihat di bawah).
+Tidak ada satu pun gambar eksternal. Ornamen berjas SVG/CSS, kecuali **dua** yang memakai
+WebGL — dan keduanya hanya di mode `rich`:
 
-| Komponen | Isi | Letak |
+| Komponen | Isi | Letak | Gate |
+|---|---|---|---|
+| `.hero-ambient` | Glow radial CSS murni, statis | Latar hero | selalu |
+| `HeroParticles` | **WebGL (three.js)**: 560 partikel emas membentuk heliks DNA | Latar hero | `rich` saja |
+| `DnaHelix` | Dua untai sinusoidal berpelintir + anak tangga (SVG) | Section Kenapa Helixa | selalu |
+| `GyroCanvas` | **WebGL (three.js)**: 4 cincin `TorusGeometry` wireframe (armillary) | Dekorasi sisi Aturan | `rich` saja |
+| `MathSymbols` | Σ, φ, f(x) — **parallax per-simbol** | Latar Cara Ikut | `rich` saja |
+| `GrainOverlay` | `feTurbulence` data-URI | `fixed inset-0`, `pointer-events-none` | selalu |
+| `.hero-scrim` | Gradien gelap **di atas** canvas, melindungi teks dari objek | Antara canvas & konten | selalu |
+
+### Gerbang `useMotionMode()` — satu-satunya pintu masuk
+
+Semua fitur baru di halaman ini melewati satu hook. Ia mengembalikan tiga mode:
+
+| Mode | Kapan | Isinya |
 |---|---|---|
-| `.hero-ambient` | Glow radial CSS murni, statis; parallax kecil saat scroll (≥1024px + pointer fine) | Latar hero |
-| `HelixScene` | **Canvas 2D**: heliks DNA + cincin penanda + partikel + satelit orbit | Latar hero, ≥768px |
-| `DnaHelix` | Dua untai sinusoidal berpelintir + anak tangga (SVG) | Section Kenapa Helixa |
-| `MathSymbols` | Σ, π, ∫ — statis, bukan parallax | Latar Cara Ikut |
-| `GrainOverlay` | `feTurbulence` data-URI | `fixed inset-0`, `pointer-events-none` |
-| `.hero-scrim` | Gradien gelap **di atas** canvas, melindungi teks dari objek | Lapisan antara canvas & konten |
+| `rich` | pointer fine **dan** lebar ≥1024px, tanpa reduced-motion | Semua: kursor, dua WebGL, parallax, smooth scroll |
+| `simple` | HP / tablet / pointer coarse | **Persis seperti sebelum revisi ini.** Tidak ada three.js, tidak ada GSAP, tidak ada kursor, tidak ada parallax |
+| `reduced` | `prefers-reduced-motion: reduce` di perangkat yang memenuhi syarat di atas | Konten langsung terbaca, nol animasi |
 
-### Objek 3D hero — Canvas 2D, bukan three.js
+`readMotionMode()` memeriksa **perangkat dulu, baru preferensi gerak** — urutan itu disengaja.
+HP yang juga meminta reduced-motion tetap dapat `'simple'`, sehingga chunk three.js dan GSAP
+tidak pernah terunduh di perangkat mana pun yang kecil. Konsekuensinya: di HP dengan
+reduced-motion, partikel three.js memang tidak muncul sama sekali (yang tampil `DnaHelix` SVG
+yang diam). Itu pilihan yang diambil agar syarat "three.js tidak terunduh di mobile" tetap
+benar di tingkat jaringan, bukan sekadar "tidak dieksekusi".
 
-`src/three/helixScene.ts` (nama folder warisan dari implementasi three.js lama; paketnya
-sendiri tidak pernah dipakai lagi) menggambar sendiri heliks DNA, cincin penanda, partikel
-naik, dan satu satelit yang mengorbit. Cara kerjanya:
+### Partikel hero — `src/three/dnaParticles.ts`
 
-- **Perspektif + depth-sort di JS.** Tiap titik diproyeksikan sendiri (`project()`), lalu
-  dirender berurutan dari belakang ke depan; compositing `lighter` untuk titik bercahaya.
-- **Sprite di-prerender sekali.** Tiga gradient radial 48×48 dibangun di awal, lalu tiap
-  frame cukup `drawImage`. Menyusun string rgba di dalam loop adalah bottleneck yang sudah
-  dihindari, bukan placeholder.
-- **Tanpa WebGL, tanpa shader, tanpa dependency.** three.js menambah ~150 kB gzip + kompilasi
-  shader saat load, dan bisa ditolak GPU blocklist. Renderer ini 3.85 kB / 1.92 kB gzip
-  dan tidak pernah gagal kompilasi.
-- **Berhenti total saat keluar viewport.** `IntersectionObserver` membatalkan rAF-nya,
-  bukan hanya berhenti menggambar — inilah penghematan nyata, bukan yang berbasis TBT.
-- **DPR dibatasi 2.** Baterai di laptop retina tidak perlu diratakan ke lebih banyak piksel.
+- **560 partikel**, dua untai (`θ` dan `θ+π`), radius konsisten, jitter acak di x/y/z supaya
+  terbaca sebagai serbuk, bukan garis padat.
+- Emas `#D4AF37` / `#F6E7B4`, opacity 0.78, additive blending, size attenuation, DPR maks 2.
+- Rotasi kontinu Y 0.05 rad/detik; tilt ke mouse maks ±0.3 rad Y dan ±0.15 rad X, lerp
+  0.05/frame. Ini **pengecualian infinite-loop resmi #1**.
+- Motif duduk di **87% lebar layar** (`MOTIF_CENTER_X`), sama dengan kotak fallback SVG
+  `DnaHelix` (`right: 4%`) supaya transisi rich → simple tidak terasa melompat. Nilainya
+  dihitung dari geometri kamera, jadi posisinya sama di aspect rasio berapa pun.
+- Berhenti **total** saat hero keluar `rootMargin: -20%`, dan saat tab disembunyikan.
+- Fallback wajib: pembuatan WebGL dibungkus `try/catch`; kalau ditolak, Hero merender
+  `DnaHelix` SVG, tidak pernah kosong.
 
-Gerbangnya `MQ.motionScene` = `no-preference` **dan `min-width: 768px`**. Di bawah itu, atau
-saat reduced-motion, scene tidak pernah dibuat — yang tampil `.hero-ambient` + `.hero-scrim`
-CSS. Lebar saja tanpa syarat pointer: mouse tidak harus ada supaya DNA tetap berputar.
+### Armillary Aturan — `src/three/gyroscope.ts`
 
-Objek digeser ke kanan pada ≥1280px (`cx = 0.72 w`) supaya headline rata-kiri tidak
-berebut ruang; di bawah itu posisinya tengah dan redup (`master = 0.55`). Breakpoint ini
-**wajib sama** dengan `@media (min-width: 1280px)` di `.hero-scrim` — kalau tidak cocok, teks
-tertutup objek atau objek menggantung di ruang kosong.
+- 4 cincin `TorusGeometry` wireframe (radius 1.0 / 0.86 / 0.72 / 0.58), kecepatan berlawanan
+  arah, opacity garis 0.55, `MeshBasicMaterial` tanpa lighting.
+- **Pengecualian infinite-loop resmi #2.**
+- Satu `IntersectionObserver` `rootMargin: 20%`: context dialokasikan saat section mendekati
+  viewport dan **dilepas penuh** saat menjauh — bukan sekadar dijeda, supaya tidak memegang
+  context WebGL nganggur sepanjang halaman di-scroll.
+
+> **Dua pengecualian itu saja.** Tidak ada loop permanen ketiga. Loop yang tidak perlu
+> (interpolasi cincin kursor) berhenti sendiri begitu menyatu, bukan berputar selama halaman
+> terbuka.
 
 ---
 
-## Sistem gerak — 8 jenis
+## Sistem gerak
 
-Semua gerak lewat paket `motion` **atau** CSS native. Gerbangnya satu-satunya:
-`MQ` di `src/lib/motion.ts`, dibaca JS lewat `useMediaQuery` dan CSS lewat `@media`
-yang sama persis.
+Semua gerak lewat paket `motion`, CSS native, `three.js` (dua tempat), atau GSAP (satu
+tempat). Gerbangnya satu-satunya: `useMotionMode()` di `src/hooks/useMotionMode.ts`.
 
 | Query | Arti |
 |---|---|
-| `MQ.motion` | Gerak diizinkan (bukan reduced-motion) |
-| `MQ.motionFine` | + pointer presisi. **Satu-satunya tempat magnet & kursor kustom boleh hidup** |
-| `MQ.motionFineWide` | + layar ≥1024px. **Satu-satunya tempat parallax boleh hidup** |
-| `MQ.motionScene` | + layar ≥768px. **Satu-satunya tempat scene 3D hero boleh hidup** |
+| `MQ.rich` | pointer fine **dan** layar ≥1024px. **Satu-satunya tempat kursor, dua WebGL, parallax, dan smooth scroll boleh hidup** |
+| `MQ.motion` | Gerak diizinkan (bukan reduced-motion) — masih dipakai `Reveal` dan hover |
 
-> **Kursor kustom tidak lagi memakai `MQ.motionFineWide`.** Dulu ia dikunci ke
-> `min-width: 1024px`, dan itu regresi: kursor hilang di jendela 1023px ke bawah —
-> justru di tempat penanda presisi paling dibutuhkan. Syarat lebar tidak ada
-> hubungannya dengan pointer, jadi sudah dicabut dari JS **dan** dari aturan CSS
-> `cursor: none`. `verify.mjs` B8 sekarang mengujinya di **900px** supaya regresi
-> yang sama tidak bisa kembali diam-diam.
+`readMotionMode()` memeriksa **perangkat dulu, baru preferensi gerak**, lalu memetakan:
+`MQ.rich` cocok → `'rich'` (kecuali reduced-motion → `'reduced'`); kalau tidak → `'simple'`.
+Urutan itu yang membuat dua syarat user berlaku sekaligus: HP dengan reduced-motion tetap
+`'simple'`, sehingga three.js tidak terunduh. Efeknya, di HP reduced-motion tidak ada
+partikel sama sekali — yang tampil `DnaHelix` SVG diam.
 
 1. **Entrance hero (sekali)** — 3 baris headline naik dari mask (`motion.span`,
    `y: 110% → 0`, `DUR.kinetic 1.0s`, delay 0.1/0.28/0.34) + chrome (eyebrow/subteks/CTA)
@@ -332,26 +397,55 @@ yang sama persis.
    top: 0; min-height: 100svh; overflow: hidden`, z-index 20/30, radius atas 28px +
    bayangan `0 -24px 60px -24px rgba(0,0,0,0.55)`. Penggulir membuat `perdana` menutupi
    `tentang` — murni CSS, tanpa listener. Enam section lain **tidak** punya efek overlap:
-   lima di antaranya pakai garis rambut 1px dalam flow normal, Hero tanpa radius. Batas
-   ini pilihan desain: section yang menumpuk terlalu banyak membuat halaman terasa
-   berantakan dan setiap gulir kehilangan konteks.
+   lima di antaranya pakai garis rambut 1px dalam flow normal, Hero tanpa radius.
 3. **Reveal saat scroll (IO)** — `.reveal-group`/`.reveal` disembunyikan di bawah fold dan
    diberi kelas `is-in-view` oleh IntersectionObserver; fade+up 24px, stagger 80ms per anak
    (CSS). Kelas hanya dipasang JS saat `MQ.motion` cocok; tanpa JS semuanya langsung terlihat.
 4. **Garis pembatas** — maska horizontal `scaleX: 0 → 1` (bukan scroll-linked) + garis
    progres Cara Ikut `scaleX`/`scaleY` yang mengikuti scroll jendela
    (`useScrollProgress`).
-5. **Parallax — HANYA 2 titik**, keduanya ≥1024px + pointer fine + no-reduced-motion:
-   ambient hero (rentang scrollY `[0, 1200]`) dan DNA di Kenapa Helixa.
+5. **Parallax — tiga simbol matematika** (Σ, φ, f(x)) di Cara Ikut, laju 0.15/0.25/0.35
+   plus pergeseran horizontal untuk φ. Mekanismenya `useScroll` + `useTransform` dari
+   `motion`, sama dengan parallax ambient hero (rentang scrollY `[0, 1200]`). Murni
+   posisi scroll, bukan rotasi otomatis. HANYA `rich`.
 6. **Hover elegan** — spotlight kartu, `border`/`background` tombol dan daftar aturan
    berpindah lembut (`transition`, `--ease-elegant`); semuanya di dalam
    `@media (hover: hover) and (pointer: fine)`.
-7. **Kursor kustom** — dot menempel tepat di pointer; cincin mengejar dengan lerp rAF
-   time-based (`1 − exp(−dt/τ)`, τ = 0.16s). Posisi lewat CSS var + `translate3d` langsung,
-   ukuran cincin via transisi CSS (pusat tetap). Didaftarkan ke `<body>`,
-   `pointer-events: none`, `cursor: none` hanya saat aktif.
+7. **Kursor kustom** — dot `#F6E7B4` 7px **memimpin**: `transform` diset langsung di
+   `pointermove`, tanpa delay dan tanpa rAF. Cincin `#D4AF37` 28px **mengejar** dengan
+   lerp eksponensial (`1 − exp(−dt/τ)`, τ = 0.4s) di dalam rAF. Persis seperti filosofi
+   lerp yang sama dipakai tilt partikel. Loop cincin **berhenti sendiri** begitu menyatu
+   (jarak < 0.05px) dan dinyalakan lagi oleh `pointermove` berikutnya — jadi tidak ada loop
+   permanen yang tidak diizinkan governance. Hover: cincin ~1.8x + terisi tipis.
 8. **Navbar** — transparan di atas → blur + solid + border emas setelah scroll (listener
-   rAF). Menu mobile = panel CSS + `role="dialog"`, body terkunci, Esc menutup.
+   rAF dengan throttle waktu + `STALE_MS` yang pulih sendiri). Menu mobile = panel CSS +
+   `role="dialog"`, body terkunci, Esc menutup.
+9. **Smooth scroll (GSAP)** — lihat bagian di bawah.
+10. **Dua WebGL** — partikel DNA di hero dan armillary di Aturan; lihat
+    [Ornamen](#ornamen--nol-gambar-raster-webgl-hanya-di-dua-tempat).
+
+### Smooth scroll — bukan `ScrollSmoother`
+
+`useSmoothScroll()` memakai **`gsap.ticker`** sebagai clock, lalu menulis posisi scroll
+dengan `window.scrollTo`. Itu sengaja, dan bukan `ScrollSmoother` yang akan lebih mudah.
+
+`ScrollSmoother` (gratis sejak GSAP 3.13) membungkus konten dalam wrapper lalu memberi
+`transform: translate3d` ke wrapper itu. Begitu konten berada di dalam elemen yang
+di-transform, `position: sticky` **di dalamnya berhenti bekerja** — posisi sticky dihitung
+relatif terhadap ancestor scroll terdekat, dan transform menjadikan wrapper itu containing
+block baru tanpa scroll container. Seluruh sistem overlap section di halaman ini bergantung
+pada sticky, jadi `ScrollSmoother` akan mematikan fitur yang justru sedang diperbaiki.
+
+Alternatifnya adalah memindahkan semua sticky ke `ScrollTrigger` `pin`, tapi itu mengganti
+seluruh sistem stacking CSS yang sudah bekerja dan terverifikasi dengan risiko regresi yang
+jauh lebih besar daripada manfaat smooth scroll-nya.
+
+GSAP sendiri di-`import()` **dinamis** dengan penampung `ticker` nullable. Impor statis
+menambah ~70 kB ke bundle utama yang dibayar semua pengunjung ponsel; setelah dipisah,
+bundle utama 400.61 kB dan chunk GSAP berdiri sendiri 70.43 kB. Pengaturan yang dipasang:
+`wheel` PASSIVE dengan guard `e.ctrlKey` (zoom browser tidak diambil alih), interpolasi
+berhenti saat `|scrollY − target|` di bawah 0.12px, dan scroll native tetap jadi acuan
+sehingga `useScrollProgress` serta ScrollTrigger tetap membaca posisi yang benar.
 
 ### Overlap antar-section — maksimal 2
 
@@ -406,12 +500,24 @@ gradasi tidak restart. Reduced-motion: teks langsung utuh, tanpa wrapper animasi
 
 ### Kursor kustom
 
-`CursorLayer` memakai dua state: dot (instan, `translate3d` ditulis langsung di frame
-`pointermove`) dan cincin (lerp rAF `1 − exp(−dt/τ)` — tidak tergantung framerate seperti
-tween berbasis delta tetap). `html[data-cursor-visible]` / `data-cursor-hover` /
-`data-cursor-pressed` jadi satu-satunya sumber state CSS (ukuran cincin lewat transisi CSS;
-margin negatif ikut menyesuaikan agar pusat cincin tetap di pointer). Portal ke
-`document.body`, `pointer-events: none`, aktif hanya saat `MQ.motionFine`.
+`CursorLayer` memakai dua state yang sengaja dipisah:
+
+- **Dot** (7px, `#F6E7B4`): posisinya diset langsung di handler `pointermove` lewat
+  `translate3d`, tanpa delay dan tanpa rAF. Dot memimpin.
+- **Cincin** (28px, border `#D4AF37`): hanya menyimpan *target*, lalu mengejar dengan lerp
+  eksponensial `1 − exp(−dt/τ)` (τ = 0.4s) — tidak tergantung framerate seperti tween berbasis
+  delta tetap.
+
+Ketika cincin sudah di dalam 0.05px dari dot, loop-nya **berhenti** (`return` tanpa
+menjadwalkan frame berikutnya); `pointermove` berikutnya menyalakannya lagi. Versi pertama
+selalu menjadwalkan frame tanpa syarat, dan itu berarti rAF menyala terus selama halaman
+terbuka meskipun mouse diam — loop permanen ketiga yang tidak diizinkan governance. `B16`
+menguji keduanya: loop aktif saat pointer bergerak, dan **nol** setelah menyatu.
+
+`html[data-cursor-visible]` / `data-cursor-hover` / `data-cursor-pressed` jadi satu-satunya
+sumber state CSS (ukuran cincin lewat transisi CSS; margin negatif ikut menyesuaikan agar
+pusat cincin tetap di pointer). Portal ke `document.body`, `pointer-events: none`, aktif
+hanya di mode `rich`.
 
 ### Magnetic pull
 
@@ -468,13 +574,15 @@ mengganti tanggal tidak boleh ikut mengubah timing animasi, dan sebaliknya.
 | Kinetic (baris headline) | `1.0s`, delay 0.1/0.28/0.34 | `DUR.kinetic` |
 | Entrance chrome hero | `0.9s`, delay 0.55/0.72/0.84 | `DUR.reveal` |
 | Reveal saat scroll | `700ms` + stagger `80ms`/anak | `--dur-reveal`, `--dur-reveal-stagger` |
-| Cursor lerp | τ `0.16s` (time-based, `1 − e^(−dt/τ)`) | `DUR.cursorTau` |
+| Cursor lerp (cincin mengejar dot) | τ `0.4s` (time-based, `1 − e^(−dt/τ)`) | `DUR.cursorTau` |
 | Ukuran cincin cursor | `350ms` (CSS, transisi) | CSS `.cursor-ring` |
 | Magnet | `450ms` (CSS, transisi) | CSS `.magnetic` |
 | Akordeon FAQ | `500ms` (CSS, `grid-template-rows`) | CSS `.faq-panel` |
 | Hover (tombol/kartu/tautan) | `300ms` | `--dur-hover` |
 | Navbar scroll-state | `500ms` (Tailwind `duration-500`) | `Navbar.tsx` |
 | Parallax | hero ambient `0.22 × 90px` (range scroll 1200), DNA `0.16 × 70px` | `PARALLAX` |
+| Parallax simbol matematika | Σ `0.15`, φ `0.25` (+ geser horizontal), f(x) `0.35` | `PARALLAX.mathSigma/mathPhi/mathFunction` |
+| Partikel DNA hero | rotasi Y `0.05 rad/detik`, tilt lerp `0.05`/frame | `SPIN`, `TILT_*` di `dnaParticles.ts` |
 
 ---
 
@@ -484,11 +592,10 @@ Mobile-first, dibuka dengan `sm` 640 · `md` 768 · `lg` 1024 · `xl` 1280.
 
 | Breakpoint | Yang berubah |
 |---|---|
-| <768px | Canvas 3D tidak pernah dibuat; kursor kustom & magnet mati |
-| ≥768px | Scene 3D hero boleh hidup (`MQ.motionScene`) |
-| ≥1024px | Parallax (hero ambient + DNA) & kursor kustom aktif (pointer fine) |
+| <1024px, atau pointer coarse | Mode `simple`: tanpa three.js, tanpa GSAP, tanpa kursor, tanpa parallax, tanpa magnet |
+| ≥1024px + pointer fine | Mode `rich`: semua fitur aktif |
 | ≥1024px **dan** ≥720px | `tentang` + `perdana` di-pin sebagai kartu bertumpuk |
-| ≥1280px | Objek 3D hero bergeser ke kanan (`cx = 0.72 w`) + scrim jadi gradien linear |
+| ≥1280px | Motif DNA bergeser ke kolom kanan (pusat di 87% lebar) + scrim jadi gradien linear |
 | `orientation: landscape` + `max-height: 500px` | Hero tidak lagi memaksa tinggi layar, petunjuk scroll disembunyikan |
 
 Detail penting:
@@ -512,18 +619,29 @@ fokus dikembalikan ke tombol pemicu saat ditutup.
 
 ## Ukuran build
 
-| File | Ukuran | gzip |
-|---|---|---|
-| `index.html` | 1.95 kB | 0.88 kB |
-| `assets/index-*.css` | 36.92 kB | 8.30 kB |
-| `assets/index-*.js` (bundle utama) | 395.68 kB | 125.56 kB |
-| `assets/helixScene-*.js` (chunk async, scene 3D) | 3.85 kB | 1.92 kB |
-| `fonts/cormorant-garamond-latin-var.woff2` | 37.6 kB | — (sudah kompres) |
-| `fonts/manrope-latin-var.woff2` | 24.8 kB | — (sudah kompres) |
+| File | Ukuran | gzip | Dimuat di HP? |
+|---|---|---|---|
+| `index.html` | 1.95 kB | 0.88 kB | ya |
+| `assets/index-*.css` | 37.42 kB | 8.38 kB | ya |
+| `assets/index-*.js` (bundle utama) | 400.71 kB | 126.55 kB | ya |
+| `assets/three.module-*.js` | 515.66 kB | 128.16 kB | **tidak** |
+| `assets/index-*.js` (chunk GSAP) | 70.43 kB | 27.57 kB | **tidak** |
+| `assets/dnaParticles-*.js` | 2.74 kB | 1.45 kB | **tidak** |
+| `assets/gyroscope-*.js` | 1.87 kB | 0.98 kB | **tidak** |
+| `fonts/cormorant-garamond-latin-var.woff2` | 37.64 kB | — (sudah kompres) | ya |
+| `fonts/manrope-latin-var.woff2` | 24.84 kB | — (sudah kompres) | ya |
 
-Ada **satu** chunk async: `helixScene`, di-`import()` dinamis dari `HeroCanvas`. Alasannya
-LCP, bukan ukuran: teks hero selesai digambar lebih dulu, scene menyusul dengan fade-in.
-Di bawah 768px atau saat reduced-motion, chunk itu tidak pernah diminta sama sekali.
+Ada **empat** chunk async, semuanya `import()` dinamis dan semuanya hanya diminta di mode
+`rich`: `three.module` (dipakai bersama oleh kedua scene), `dnaParticles`, `gyroscope`, dan
+GSAP. Di HP, total `.js` yang diminta browser adalah **satu file**: `index-*.js`. Itu
+dibuktikan oleh rekaman jaringan di `verify.mjs` B11, bukan dibaca dari DOM — DOM hanya bisa
+menunjukkan canvas tidak ada, yang tetap benar/skena kalau three.js ikut terpasang di bundle
+utama. Total transfer HP ±196 KiB; three.js saja 128 KiB gzip, jadi mustahil ikut masuk.
+
+GSAP diimpor dinamis dengan sengaja. Impor statis akan menambah ~70 kB ke bundle utama yang
+dibayar semua pengunjung ponsel; setelah dipisah, bundle utama 400.71 kB dan chunk GSAP
+berdiri sendiri 70.43 kB.
+
 Kedua font latin variable di-host sendiri (total ~62 kB) dan di-`preload`, jadi tidak ada
 permintaan ke pihak ketiga sama sekali saat halaman dimuat.
 
@@ -586,87 +704,94 @@ Semua diukur terhadap **production build** (`npm run build` → `npm run preview
 
 Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 
-**`verify.mjs` — 111 cek lulus / 0 gagal** terhadap build yang sama. Ringkasan bagian:
+**`verify.mjs` — 131 cek lulus / 0 gagal** terhadap build yang sama. Ringkasan bagian:
 
 | Bagian | Yang dibuktikan |
 |---|---|
-| A1–A2 | Statis: tanpa gsap/lenis/three di package.json & src; `--color-gold-bronze: #a17c1b`; tanpa `--font-mono`/Space Mono/`.lenis`; tanpa animasi infinite; stack punya syarat mati di luar layar cukup besar **dan** dimatikan total di reduced-motion |
+| A1–A2 | Statis: three.js & GSAP hanya diimpor di dalam `src/three/`; `--color-gold-bronze: #a17c1b`; tanpa `--font-mono`/Space Mono/`.lenis`; tanpa animasi infinite; stack punya syarat mati di luar layar cukup besar **dan** dimatikan total di reduced-motion |
 | B1 | 8 section, z-index 10→80; **maksimal 2** yang di-pin (`tentang` + `perdana`), sisanya garis rambut; isi section ter-pin muat di viewport; `scroll-margin-top` 88px |
-| B2 | Headline terpecah 3 baris, teks utuh, "sains" gradien, ambient statis; **canvas 3D benar-benar menggambar** (lit-pixel > 400, maxAlpha > 120, opacity > 0.95, centroid > 0.62 × vw) + scrim ada |
+| B2 | Headline terpecah 3 baris, teks utuh, "sains" gradien, ambient statis; **partikel benar-benar menggambar** — framebuffer dibaca in-page (lit > 2000, maxLuma > 100) dan pusat motif di **87.7%** lebar layar, jauh dari headline yang berakhir di 864/1440px |
 | B3 | Semua reveal terpicu, nol elemen tertinggal opacity 0 |
 | B4 | Garis progres `scaleX` tumbuh mengikuti scroll |
-| B5 | Parallax DNA bergeser (≥1024px + fine) |
+| B5 | Parallax tiga simbol matematika (Σ, φ, f(x)) bergeser (≥1024px + fine) |
 | B6 | FAQ: item pertama terbuka, `inert` tepat, buka-tutup bergantian, tombol diklik & **tidak tertutup** section ter-pin |
 | B7 | Navbar transparan → blur + solid + border emas |
-| B8 | Cincin mengejar pointer, dot menempel, cincin berpusat; **hidup di 900px** (regresi batas-lebar), sementara parallax tetap mati di 900px |
+| B8 | Dot memimpin (langsung di `pointermove`), cincin mengejar, cincin berpusat; hover membesar |
 | B9 | Magnet mendekat & kembali; `--mx/--my` spotlight; keduanya `hover:fine` saja |
 | B10 | Menu tersembunyi di desktop; tanpa scroll horizontal 1440px |
-| B11 | Mobile: canvas 3D tidak dibuat, hanya 2 section overlap `-28px`, kursor/magnet mati, menu `dialog`, Esc menutup |
-| B12 | Reduced motion: canvas 3D tidak dibuat, ambient tetap ada, relative, tanpa radius/bayangan, teks langsung terbaca |
+| B11 | Mobile: **rekam jaringan** → hanya 1 file `.js` (bundle utama), nol chunk three.js & GSAP; canvas 3D tidak dibuat; hanya 2 section overlap `-28px`; kursor/magnet mati; menu `dialog`, Esc menutup |
+| B12 | Reduced motion: canvas 3D tidak dibuat, ambient tetap ada, relative, tanpa radius/bayangan, teks langsung terbaca, dan **0 animasi CSS berjalan di seluruh halaman** (`document.getAnimations()`) |
 | B13 | Sweep 320/375/768/1024/1440: tanpa scroll horizontal, FAQ klikable |
 | B14 | **0 exception, 0 `console.error`** |
+| B15 | FPS hero **60.3**, FPS giroskop **60.0**; kedua canvas tidak pernah hidup bersamaan (jarak 3071px); **render loop 0 callback** saat semua section 3D jauh, hidup lagi (60.1) setelah kembali ke atas |
+| B16 | Interpolasi cincin kursor **aktif** saat pointer bergerak (60 fps) dan **0 callback** setelah menyatu |
+
+**`verify-webgl-off.mjs` — 7 cek lulus / 0 gagal** dengan Chrome dijalankan
+`--disable-3d-apis`:
+
+| Cek | Hasil |
+|---|---|
+| WebGL benar-benar mati (uji valid) | `webgl2=false webgl1=false` |
+| Tidak ada canvas three.js di hero | 0 canvas |
+| SVG helix fallback muncul | ya |
+| SVG helix punya dimensi nyata | 267×560 |
+| Headline hero tetap utuh | 24 karakter |
+| SVG helix diam | 0 animasi |
+| Nol error console | bersih |
 
 ### Lighthouse (Mobile, headless Chrome)
 
 | Kategori | Skor |
 |---|---|
-| Performance | **61** (median 3 run; lihat catatan di bawah) |
+| Performance | **66 / 69 / 70** (3 run berturut; median **69**) |
 | Accessibility | 96 |
 | Best practices | 100 |
 | SEO | 91 |
 
-Tiga kategori selain Performance **stabil persis** di setiap run. Performance tidak —
-ia berfluktuasi 59–65 pada tiga run berturut, dan pernah turun ke 44 ketika beban CPU
-host menyentuh 100%.
+Tiga kategori selain Performance **stabil persis** di setiap run. Performance naik dari 61
+(median 3 run sebelum revisi ini) ke 69, dan tetap berfluktuasi mengikuti beban CPU host.
 
-Rincian performance (median 3 run) — **empat dari lima metrik sudah sehat, satu tidak**:
+Rincian performance (run terbaik dari 3) — **empat dari lima metrik sudah sehat, satu tidak**:
 
 | Metrik | Nilai | Skor | Bobot |
 |---|---|---|---|
-| FCP | 1.9 s | 86 | 10 |
-| LCP | 2.7 s | 85 | 25 |
+| FCP | 1.8 s | 90 | 10 |
+| LCP | 2.3 s | 93 | 25 |
 | CLS | 0 | 100 | 25 |
-| Speed Index | 6.3 s | 42 | 10 |
-| **TBT** | **2350 ms** | **5** | **30** |
+| Speed Index | 4.0 s | 81 | 10 |
+| **TBT** | **1330 ms** | **17** | **30** |
 
 **TBT adalah satu-satunya penahan, dan ini batas arsitektur, bukan bug.** Seluruh TBT
-berasal dari satu long task: mount React 19 + `motion`. Diukur tanpa throttling, satu
-muat halaman ini butuh ~180–340 ms `ScriptDuration` untuk 362 node DOM; Lighthouse
-mensimulasikan CPU 4× lebih lambat, jadi task yang sama muncul sebagai ~1–1.4 s.
-Untuk skor TBT ≥ 90 (≈ ≤ 200 ms) pekerjaan JS riil harus turun ke bawah ~50 ms, dan
-itu tidak mungkin dicapai oleh mount React + `motion` tanpa mengganti arsitekturnya.
+berasal dari satu long task: mount React 19 + `motion`.
 
-**Biaya objek 3D: nol, dan ini dibuktikan langsung.** Dulu sementara ada gerbang
-`load` di `HeroCanvas` dengan alasan "menghemat TBT". Alasannya dibatalkan karena
-pengukurannya salah: TBT untuk build yang **identik** berfluktuasi 1300–3720 ms di
-mesin ini, jadi selisih segitu tidak membuktikan apa pun. Yang benar diukur langsung —
-satu frame scene:
+> **Bukti bahwa TBT itu bukan dari fitur 3D yang baru.** Rincian main thread dari run
+> terbaik: `scriptEvaluation` 1426 ms, dan **seluruhnya** berasal dari satu file,
+> `index-*.js` (bundle utama). Bootup time file itu 2603 ms; tidak ada file lain yang
+> muncul di daftar. Total transfer seluruh halaman ±196 KiB, sedangkan three.js saja
+> 128 KiB gzip dan GSAP 27.6 KiB — secara aritmetika tidak mungkin keduanya ikut masuk.
+> Ini cocok dengan rekaman jaringan B11: di HP, browser hanya meminta satu `.js`.
+> Jadi features WebGL dan smooth scroll **nol** kontribusi terhadap TBT mobile.
 
-| Skenario | Biaya 1 frame |
+Diukur tanpa throttling, satu muat halaman ini butuh ~180–340 ms `ScriptDuration` untuk
+362 node DOM; Lighthouse mensimulasikan CPU 4× lebih lambat, jadi task yang sama muncul
+sebagai ~1–1.4 s. Untuk skor TBT ≥ 90 (≈ ≤ 200 ms) pekerjaan JS riil harus turun ke bawah
+~50 ms, dan itu tidak mungkin dicapai oleh mount React + `motion` tanpa mengganti
+arsitekturnya.
+
+**Biaya scene WebGL diukur langsung di browser, bukan dari selisih TBT** — pengukuran TBT
+sendiri terlalu bising di mesin ini untuk menyimpulkan apa pun:
+
+| Skenario | Hasil terukur |
 |---|---|
-| 1024×720 @ DPR 1 | 4.4 ms |
-| 1440×900 @ DPR 1 | 4.5 ms |
-| 1440×900 @ DPR 2 (canvas 2880×1800) | 4.9 ms |
+| Partikel hero aktif, 1440×900 | 60.3 fps |
+| Giroskop Aturan aktif, 1440×900 | 60.0 fps |
+| Kedua scene hidup bersamaan | **tidak pernah terjadi** — jaraknya 3071px, rentang tumpang-tindih −2711px |
+| Semua section 3D jauh dari viewport | **0 callback rAF** (loop benar-benar berhenti) |
+| Kembali ke atas | 60.1 fps (loop hidup lagi) |
 
-Itu ~27% dari anggaran frame 60 fps, dan mustahil menjadi long task (ambang 50 ms) yang
-dihitung TBT. Gerbang `load` lalu dicabut — ia tidak menghemat apa pun, hanya
-memperlambat objek yang justru diminta untuk tampil. Penghematan yang dipakai
-ganti: rAF **dibatalkan** saat hero keluar viewport (`IntersectionObserver`), bukan
-hanya berhenti menggambar.
-
-**Angka 67 → 61 terjadi setelah objek 3D kembali, tapi TBT bukan penyebabnya.** Selisih
-itu tidak diklaim sebagai "biaya scene" — ia konsekuensi yang lain: Speed Index turun
-72 → 42 karena hero kini punya canvas yang harus dilukis setelah LCP tercapai. Yang
-bisa dipertanggungjawabkan hanyalah biaya frame yang terukur di tabel di atas.
-
-**Yang benar-benar memperbaiki angka (50 → 67, sebelum objek 3D kembali):**
-
-| Perubahan | Efek |
-|---|---|
-| Font di-host sendiri (2 woff2, ~62 kB, preload) — hilang DNS + TCP + TLS + round-trip ke Google Fonts | 50 → 66 |
-| Satu `IntersectionObserver` bersama untuk semua reveal (bukan satu per elemen) | mengurai init |
-| `.grain` tanpa `mix-blend-mode` — overlay fixed setinggi viewport/full lebar memaksa pembacaan backdrop tiap repaint | mengurai paint |
-| Pembacaan geometri di-batch ke `requestAnimationFrame`; rect magnet & spotlight diukur lazy lalu ditandai basi | DCL 741 → 442 ms, FCP 1160 → 844 ms |
+Keduanya mengikat frame 60 fps penuh di headless, jadi tidak ada satu pun yang memakai
+buang frame. Dan tidak ada lagi loop rAF permanen ketiga: interpolasi cincin kursor juga
+diukur (aktif saat bergerak, 0 setelah menyatu).
 
 **Yang dicoba lalu dikembalikan:**
 
@@ -714,8 +839,11 @@ ikut salah. Trade-off metric-versus-kebenaran itu tidak diambil.
    (terbukti: satu penyuntingan README menggeser CSS 0.43 kB).
 2. **`motion` v13** dipakai via `motion/react` (`motion`, `useScroll`, `useTransform`,
    `useReducedMotion`). Build Vite SPA, bukan SSR.
-3. **Scroll native** — `html { scroll-behavior: smooth }` untuk tautan anchor; tidak ada
-   smooth-scroll pihak ketiga. Reduced-motion memaksa `auto`.
+3. **Scroll** — `html { scroll-behavior: smooth }` untuk tautan anchor, dan pada mode `rich`
+   `useSmoothScroll()` mengambil alih dengan GSAP (`gsap.ticker` + `window.scrollTo`).
+   Scroll **tetap native** — yang diinterpolasi hanya nilai `scrollY`, tidak ada transform
+   pada wrapper konten, jadi `position: sticky` tetap bekerja. Di mode `simple` dan
+   `reduced`, scroll dibiarkan sepenuhnya native; reduced-motion memaksa `auto`.
 4. **Font di-host sendiri** — `public/fonts/` berisi dua *variable* woff2 latin (Cormorant
    Garamond 500–600, Manrope 400–600; total ~62 kB, lisensi SIL OFL), di-`@font-face` di
    `index.css` dan di-`preload` dari `index.html` lewat `%BASE_URL%` sehingga ikut benar
@@ -731,3 +859,19 @@ ikut salah. Trade-off metric-versus-kebenaran itu tidak diambil.
 7. **Skrip verifikasi butuh Chrome** di `C:\Program Files\Google\Chrome\Application\chrome.exe`
    dan server yang sudah berjalan. Keduanya akan gagal dengan pesan jelas, bukan diam-diam
    melewati cek.
+8. **three.js vanilla, bukan `@react-three/fiber`** — supaya importer, tree-shaking, dan
+   dynamic import-nya dikontrol langsung, tanpa menambah runtime React di dalam canvas.
+   three.js **hanya** diimpor di dalam `src/three/`, dan modul itu **hanya** di-`import()`
+   dari cabang `mode === 'rich'`. Mode `simple` dan `reduced` tidak pernah mencapai baris
+   itu, jadi chunk-nya bukan sekadar "tidak dieksekusi" — benar-benar tidak pernah diminta
+   di jaringan. `verify.mjs` A1 memeriksa batas path itu secara statis, B11 memverifikasi
+   di level jaringan.
+9. **`ScrollSmoother` GSAP sengaja tidak dipakai.** Ia membungkus konten lalu memberi
+   `transform: translate3d` ke wrapper, dan konten di dalam elemen ber-transform kehilangan
+   `position: sticky` — yang seluruh sistem overlap section ini bergantung padanya. Alasan
+   lengkap di [Smooth scroll](#smooth-scroll--bukan-scrollsmoother).
+10. **Dua pengecualian infinite-loop resmi**, dan hanya dua: rotasi partikel DNA di hero
+    (0.05 rad/detik) dan giroskop armillary di Aturan. Keduanya hanya di mode `rich`, keduanya
+    punya jalur berhenti (IO + `visibilitychange`), dan keduanya punya fallback saat WebGL
+    ditolak. Tidak ada pengecualian ketiga: cincin kursor, tilt partikel, dan smooth scroll
+    semuanya berhenti sendiri saat tidak ada yang berubah.

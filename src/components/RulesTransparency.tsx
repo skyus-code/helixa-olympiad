@@ -4,11 +4,19 @@
  * Header sengaja rata KANAN (satu-satunya section yang begitu) dengan lebar
  * ~38ch, sedangkan daftar aturan tetap di kiri (max 65ch agar baris nyaman
  * dibaca). Garis emas tipis di atas daftar membesar dari kiri saat section
- * masuk layar (gerakan garis pembatas — salah satu dari 8 jenis motion).
+ * masuk layar (gerakan garis pembatas).
+ *
+ * Di belakang konten ada kanvas armillary (cincin presisi berlapis) lewat
+ * GyroCanvas. Bentuknya dipilih karena maknanya, bukan cuma karena_params
+ * visualnya: cincin berlapis = ketertiban, wireframe tembus pandang =
+ * transparansi, gerakan yang konsisten dan dapat diprediksi = kepercayaan.
+ * Karena itu posisinya dijaga di sisi KANAN section, berlawanan dengan daftar
+ * aturan yang mengisi kiri - objeknya tidak pernah menutupi teks.
  */
 import { Reveal, RevealGroup } from './ui/Reveal';
 import { Section } from './ui/Section';
 import { Eyebrow } from './ui/Eyebrow';
+import { GyroCanvas } from './GyroCanvas';
 import { RULES } from '../content';
 
 const NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
@@ -16,6 +24,8 @@ const NUMERALS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 export function RulesTransparency() {
   return (
     <Section id="aturan" z={60} card>
+      <GyroCanvas className="rules-gyro" />
+
       <div className="section-head section-head--right">
         <Eyebrow>{RULES.eyebrow}</Eyebrow>
 

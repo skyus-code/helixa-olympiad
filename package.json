@@ -11,12 +11,17 @@
     "typecheck": "tsc -b",
     "check:responsive": "node scripts/audit.mjs",
     "check:verify": "node scripts/verify.mjs",
-    "check": "npm run build && npm run check:responsive && npm run check:verify"
+    "check:webgl-off": "node scripts/verify-webgl-off.mjs",
+    "check:lighthouse": "node scripts/lighthouse.mjs",
+    "check": "npm run build && npm run check:responsive && npm run check:verify && npm run check:webgl-off"
   },
   "dependencies": {
+    "@types/three": "^0.186.0",
+    "gsap": "^3.15.0",
     "motion": "^13.4.6",
     "react": "^19.1.1",
-    "react-dom": "^19.1.1"
+    "react-dom": "^19.1.1",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.13",

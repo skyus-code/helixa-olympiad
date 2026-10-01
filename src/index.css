@@ -535,6 +535,57 @@
     }
   }
 
+  /* ---- Giroskop armillary (section Aturan) ------------------------------- */
+  /* Ditaruh di sisi kanan karena daftar aturan mengisi sisi kiri. Lebarnya
+     dibatasi supaya cincin tidak pernah masuk ke area teks, dan opacity
+     diturunkan lewat kelas .rules-gyro supaya garis emas tidak mengalahkan
+     ketebalan tipografi. */
+  .rules-gyro {
+    opacity: 0.62;
+    contain: strict;
+  }
+
+  @media (min-width: 768px) {
+    .rules-gyro {
+      /* Isi canvas diposisikan ke separuh kanan section lewat offset kiri 50%,
+         sementara wrapper-nya tetap inset-0. Jadi biaya layout-nya nol. */
+      left: 50%;
+    }
+  }
+
+  /* ---- Heliks DNA SVG (fallback mode simple/reduced) ---------------------- */
+  /* Ornamen ini yang tampil kalau three.js tidak dipakai: di mode 'simple'
+     (HP/tablet), di mode 'reduced' (geraknya dimatikan di bawah), dan di mode
+     'rich' yang gagal dapat WebGL context.
+
+     Dua alasan ukurannya di sini, bukan sebagai utility di JSX:
+       - posisinya harus benar-benar "di dalam slot yang sama" dengan partikel
+         3D, supaya transisi fallback tidak terasa seperti elemen baru yang
+         melompat ke tempat lain;
+       - di bawah 768px ornamen ini sepenuhnya disembunyikan. Di layar
+         sekecil itu helix hanya jadi kabut di belakang teks, dan yang
+         TERLIHAT ke user justru headline-nya. Biayanya nyata,/manfaatnya
+         tidak. */
+  .hero-dna-helix {
+    height: min(58vh, 420px);
+    width: auto;
+    opacity: 0.85;
+  }
+
+  @media (min-width: 768px) {
+    .hero-dna-helix {
+      height: min(72vh, 560px);
+    }
+  }
+
+  @media (min-width: 1280px) {
+    .hero-dna-helix {
+      /* Geser ke kanan sesuai slot dua kolom, sama seperti yang dilakukan
+         kamera partikel (camera.position.x = 1.15 di dnaParticles.ts). */
+      right: 4%;
+    }
+  }
+
   /* ---- Kinetic typography: mask per baris --------------------------------- */
   /* Tiap baris dibungkus wrapper ber-overflow:hidden; baris bergerak dari
      dalam mask, bukan sekadar fade. */
@@ -626,19 +677,26 @@
     }
   }
 
-  /* ---- Kursor kustom ------------------------------------------------------- */
-  /* Dot menempel tepat di pointer (transform ditulis langsung JS); cincin
-     mengejar lewat lerp rAF. Ukuran cincin & margin negatif bertransisi CSS
-     supaya pusat cincin SISI tetap di pointer saat membesar. */
+  /* ---- Kursor kustom: DOT MEMIMPIN, RING MENGEJAR -------------------------- */
+  /* Dot: transform ditulis LANGSUNG di handler pointermove, tanpa interpolasi.
+     Ring: transform ditulis di rAF, lerp menuju posisi dot saat ini.
+     Keduanya fixed + pointer-events none + z-index maksimum, karena seluruh
+     section ber-z-index 10-80 dan hero-scrim lebih tinggi lagi. Tanpa z-index
+     eksplisit, kursor tergambar di bawah semuanya: `cursor: none` aktif tapi
+     tidak ada yang terlihat, dan penanda pointer hilang total. */
   .cursor-ring {
     position: fixed;
     left: 0;
     top: 0;
-    width: 14px;
-    height: 14px;
-    margin-left: -7px;
-    margin-top: -7px;
+    width: 28px;
+    height: 28px;
+    margin-left: -14px;
+    margin-top: -14px;
     opacity: 0;
+    z-index: 2147483647;
+    pointer-events: none;
+    /* Ukuran + margin negatif bertransisi CSS supaya pusat cincin tetap pas
+       di pointer meski membesar. */
     transition:
       width 0.35s var(--ease-elegant),
       height 0.35s var(--ease-elegant),
@@ -652,22 +710,27 @@
     position: absolute;
     inset: 0;
     border-radius: 9999px;
-    border: 1px solid rgba(212, 175, 55, 0.65);
-    mix-blend-mode: screen;
+    border: 1.5px solid rgba(212, 175, 55, 0.8);
+    background-color: transparent;
     transition:
       transform 0.25s ease-out,
-      border-color 0.35s var(--ease-elegant);
+      border-color 0.35s var(--ease-elegant),
+      background-color 0.35s var(--ease-elegant);
   }
 
   .cursor-dot {
     position: fixed;
     left: 0;
     top: 0;
-    width: 4px;
-    height: 4px;
-    margin-left: -2px;
-    margin-top: -2px;
+    width: 6px;
+    height: 6px;
+    margin-left: -3px;
+    margin-top: -3px;
     opacity: 0;
+    border-radius: 9999px;
+    background-color: #f6e7b4;
+    z-index: 2147483647;
+    pointer-events: none;
     transition: opacity 0.25s ease-out;
     will-change: transform;
   }
@@ -678,26 +741,30 @@
     opacity: 1;
   }
 
-  /* Di atas elemen interaktif: cincin membesar 14 -> 44px (pusat tetap),
-     dot dipadamkan supaya hanya cincin yang menandai hover. */
+  /* Di atas elemen interaktif: ring membesar ~1.8x (28 -> 50px, pusat tetap)
+     dan terisi tipis emas. Perilaku lama dipertahankan. */
   html[data-cursor-hover='true'] .cursor-ring {
-    width: 44px;
-    height: 44px;
-    margin-left: -22px;
-    margin-top: -22px;
+    width: 50px;
+    height: 50px;
+    margin-left: -25px;
+    margin-top: -25px;
   }
 
   html[data-cursor-hover='true'] .cursor-ring__core {
-    border-color: rgba(246, 231, 180, 0.9);
+    border-color: rgba(246, 231, 180, 0.95);
+    background-color: rgba(212, 175, 55, 0.12);
   }
 
+  /* Dot tetap terlihat saat hover: justru di sini bentuk "odot di dalam
+     lingkaran" (simbol yang diminta user) paling terbaca, karena ring sudah
+     melebar sehingga tidak menutupi dot. */
   html[data-cursor-hover='true'] .cursor-dot {
-    opacity: 0;
+    opacity: 1;
   }
 
   /* Tekan: cincin memampat (scale pada core, anchor tetap di tengah) */
   html[data-cursor-pressed='true'] .cursor-ring__core {
-    transform: scale(0.8);
+    transform: scale(0.85);
   }
 }
 

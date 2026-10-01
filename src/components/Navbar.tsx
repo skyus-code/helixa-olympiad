@@ -54,22 +54,65 @@ function MenuIcon({ open }: { open: boolean }) {
   );
 }
 
+/**
+ * Batas umur handle requestAnimationFrame. Kalau rAF yang dijadwalkan belum
+ * juga jalan setelah ini, dianggap jatuh dan tidak lagi dipercaya sebagai
+ * "sudah ada pembaruan terjadwal". See catatan throttle di efek navbar.
+ */
+const STALE_MS = 300;
+
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const toggleRef = useRef<HTMLButtonElement | null>(null);
 
-  /* Transparan di atas; semi-transparan + blur + garis emas setelah 40px. */
+  /*
+   * Transparan di atas; semi-transparan + blur + garis emas setelah 40px.
+   *
+   * Throttle pakai cap WAKTU, bukan handle requestAnimationFrame yang disimpan
+   * sebagai boolean "sudah ada frame_pending".
+   *
+   * Pola lama (`if (frame) return; frame = requestAnimationFrame(...)`) punya
+   *-mode gagal yang permanen: kalau rAF itu dijatuhkan browser - yang terjadi
+   * saat renderer sedang sibuk, tab di-throttle, atau headless sedang
+   * mengambil screenshot - callback-nya tidak pernah jalan, jadi penanda
+   * `frame` tidak pernah dikembalikan ke 0. Setelah itu SETIAP event scroll
+   * berikutnya ditolak, dan navbar tidak pernah berubah lagi sampai halaman
+   * dimuat ulang. Symptom-nyaExactly "navbar tetap transparan padahal sudah
+   * di-scroll", persis yang terpakai.
+   *
+   * Dengan cap waktu, kegagalan rAF yang terjatuh hanya menunda pembaruan satu
+   * frame: begitu handle dianggap basi (lebih lama dari STALE_MS tanpa pernah
+   * jalan), event scroll berikutnya boleh menjadwalkan rAF baru. Jadi state pulih
+   * sendiri tanpa perlu memuat ulang halaman.
+   */
   useEffect(() => {
+    const THROTTLE_MS = 100;
+    /** Cap waktu rAF terakhir yang benar-benar JALAN, bukan yang dijadwalkan. */
+    let lastRun = 0;
+    /** Handle rAF terjadwal, atau 0. */
     let frame = 0;
-    const onScroll = () => {
-      if (frame) return;
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        setScrolled(window.scrollY > 40);
-      });
+    /** Kapan rAF di atas dijadwalkan. Dipakai untuk mengenali frame yang jatuh. */
+    let scheduledAt = 0;
+
+    const run = () => {
+      frame = 0;
+      lastRun = performance.now();
+      setScrolled(window.scrollY > 40);
     };
+
+    const onScroll = () => {
+      const now = performance.now();
+      // Frame sudah menjadwal DAN masih dianggap hidup: jangan antre dua kali.
+      if (frame && now - scheduledAt < STALE_MS) return;
+      // Terlalu baru setelah frame terakhir benar-benar jalan: nilai scrollY
+      // dibaca di dalam rAF, jadi membaca sekarang hanya membuang kerja.
+      if (now - lastRun < THROTTLE_MS) return;
+      scheduledAt = now;
+      frame = window.requestAnimationFrame(run);
+    };
+
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => {

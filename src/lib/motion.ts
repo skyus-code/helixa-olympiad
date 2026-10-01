@@ -33,6 +33,13 @@ export const MQ = {
    * Batas 768px supaya tidak membebani baterai ponsel.
    */
   motionScene: '(prefers-reduced-motion: no-preference) and (min-width: 768px)',
+  /**
+   * Mode 'rich': hanya di sini kita boleh mengaktifkan WebGL (three.js),
+   * kursor kustom dengan chase, parallax mouse. Tidak ada coarse/touch.
+   * Ini berbeda dari motionScene karena membatasi pointer secara ketat.
+   */
+  rich:
+    '(prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine) and (min-width: 1024px)',
 } as const;
 
 /* ---------------------------------------------------------------------------
@@ -68,10 +75,25 @@ export const DUR = {
 
 /** Parallax: `y` dihitung dari jarak scroll, bukan offset absolut. */
 export const PARALLAX = {
-  /** Ambient glow hero — bergerak paling lambat, memberi kedalaman. */
+  /** Ambient glow hero - bergerak paling lambat, memberi kedalaman. */
   heroBackdrop: { speed: 0.22, y: 90 },
   /** Ornamen DNA di section "Kenapa Helixa". */
   dna: { speed: 0.16, y: 70 },
+
+  /**
+   * Tiga simbol matematika di section "Cara Ikut".
+   *
+   * `speed` controlling besaran perbandingan antar simbol: makin besar, makin
+   * cepat, dan itu yang membuat ketiganya terbaca sebagai lapisan berbeda
+   * (depth) dan bukan tiga gambar yang bergerak serempak.
+   *
+   * `travel` adalah jarak total piksel yang ditempuh selagi section melewati
+   * viewport, bukan offset absolut. Phi dan f(x) juga punya `x` sehingga
+   * bergerak menyamping, bukan hanya vertikal.
+   */
+  mathSigma: { speed: 0.15, travel: 45 },
+  mathPhi: { speed: 0.25, travel: 75, x: 28 },
+  mathFunction: { speed: 0.35, travel: 105 },
 } as const;
 
 /* ---------------------------------------------------------------------------

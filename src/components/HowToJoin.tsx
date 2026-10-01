@@ -2,18 +2,22 @@
  * "Cara Ikut" - empat langkah dengan garis progres yang mengikuti scroll.
  *
  * Garis progres memakai `useScrollProgress` (progress dari window.scrollY,
- * karena section di-pin `top: 0` sehingga rect elemen tidak lagi bergerak —
+ * karena section di-pin `top: 0` sehingga rect elemen tidak lagi bergerak -
  * lihat hooks/useScrollProgress.ts). Satu elemen, dua sumbu: mobile garis
  * vertikal tumbuh dari atas (scaleY, origin-top); desktop garis horizontal
  * tumbuh dari kiri (scaleX, origin-left). Sumbu yang tidak relevan berada di
  * elemen dengan ketebalan 1px, jadi tidak terlihat.
  *
- * Simbol matematika latar dijadikan STATIS (bukan parallax): hanya dua titik
- * parallax yang diizinkan di proyek ini (hero ambient + DNA di Kenapa Helixa).
+ * Simbol matematika latar (Sigma, phi, f(x)) memakai parallax scroll-based
+ * dengan kecepatan berbeda-beda; detail mekanismenya ada di MathSymbols.tsx.
+ * Parallax ini hanya dipasang di mode 'rich' - di bawah itu simbolnya tetap
+ * tampil diam sebagai latar dekoratif, bukan hilang, karena teks langkah
+ * tidak bergantung padanya.
  */
 import { useRef } from 'react';
 import { motion, useReducedMotion, useTransform } from 'motion/react';
 import { useScrollProgress } from '../hooks/useScrollProgress';
+import { useMotionMode } from '../hooks/useMotionMode';
 import { Section } from './ui/Section';
 import { Eyebrow } from './ui/Eyebrow';
 import { RevealGroup } from './ui/Reveal';
@@ -23,10 +27,15 @@ import { HOW_TO_JOIN } from '../content';
 export function HowToJoin() {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const reduce = useReducedMotion();
+  const mode = useMotionMode();
 
   const progress = useScrollProgress(rootRef, { lead: 0.15, span: 0.85 });
   // Reduced-motion: garis ditampilkan penuh dan diam, bukan hasil scroll.
   const lineT = useTransform(progress, (p) => (reduce ? 1 : p));
+
+  // Parallax simbol hanya di mode 'rich'. Di 'simple'/'reduced' MathSymbols
+  // dirender tanpa motion sama sekali (statis), bukan disembunyikan.
+  const symbolsParallax = mode === 'rich';
 
   return (
     <Section id="cara-ikut" z={40} card>
@@ -34,7 +43,7 @@ export function HowToJoin() {
         aria-hidden="true"
         className="pointer-events-none absolute inset-0 hidden overflow-hidden opacity-[0.045] lg:block"
       >
-        <MathSymbols className="relative h-full w-full" />
+        <MathSymbols className="relative h-full w-full" parallax={symbolsParallax} />
       </div>
 
       <div ref={rootRef} className="relative">

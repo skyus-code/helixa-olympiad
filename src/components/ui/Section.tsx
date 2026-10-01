@@ -26,6 +26,17 @@ type SectionProps = {
    *  kalau `stack` mati — section biasa memakai garis rambut, bukan kartu. */
   card?: boolean;
   className?: string;
+  /**
+   * Slot dekoratif yang ditempatkan DI BELAKANG isi section, meluas penuh
+   * (`absolute inset-0`) dan tidak bisa diklik.
+   *
+   * Dipakai untuk kanvas armillary di section Aturan. Alasan slot ini ada
+   * daripada menaruh canvas di dalam `children`: canvas butuh menutup seluruh
+   * area section, sementara `children` dibungkus `.shell` yang lebarnya
+   * dibatasi 1120-1240px. Menaruhnya di dalam shell akan membuat area WebGL
+   * ikut terpotong lebar viewport.
+   */
+  decor?: ReactNode;
   /** Padding vertikal ditimpa, mis. section hero yang butuh layar penuh. */
   innerClassName?: string;
   /** Lebar isi. `wide` dipakai section dengan daftar dua kolom. */
@@ -61,6 +72,7 @@ export function Section({
   stack = false,
   card = true,
   className = '',
+  decor,
   innerClassName = 'py-18 md:py-24 lg:py-30',
   width = 'default',
 }: SectionProps) {
@@ -84,7 +96,11 @@ export function Section({
       className={`${classes.join(' ')} ${className}`}
       style={{ zIndex: z, scrollMarginTop: '88px' }}
     >
-      <div className={`shell ${innerClassName}`} style={{ ['--shell-max' as string]: shellMax }}>
+      {/* Dekorasi ditulis SEBELUM isi dan tanpa z-index, jadi selalu di bawah
+          konten. `overflow-hidden` di section ini yang menjaga canvas tidak
+          bocor ke section tetangga saat bergulir. */}
+      {decor}
+      <div className={`shell relative ${innerClassName}`} style={{ ['--shell-max' as string]: shellMax }}>
         {children}
       </div>
     </section>

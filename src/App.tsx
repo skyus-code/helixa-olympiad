@@ -7,7 +7,7 @@
  *   main #top         -> seluruh section stacking (kartu menumpuk CSS).
  *   Footer            -> di luar main, mengikuti setelah CTA.
  *   GrainOverlay      -> dekoratif, paling atas, pointer-events none.
- *   CursorLayer       -> kursor kustom, hanya >=1024px & pointer presisi.
+ *   CursorLayer       -> kursor kustom, hanya mode 'rich'.
  */
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
@@ -20,8 +20,13 @@ import { Faq } from './components/Faq';
 import { ClosingCta, Footer } from './components/ClosingCta';
 import { CursorLayer } from './components/CursorLayer';
 import { GrainOverlay } from './components/ornaments/GrainOverlay';
+import { useSmoothScroll } from './hooks/useSmoothScroll';
 
 export default function App() {
+  // Smooth scroll (GSAP ticker, hanya mode 'rich'). ScrollPosition tetap
+  // native supaya `position: sticky` di section overlap tetap bekerja.
+  useSmoothScroll();
+
   return (
     <>
       <a

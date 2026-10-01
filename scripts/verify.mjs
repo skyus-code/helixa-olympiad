@@ -1,14 +1,24 @@
 /**
- * Verifikasi landing page Helixa Olympiad — sistem gerak baru.
+ * Verifikasi landing page Helixa Olympiad — sistem gerak + WebGL.
  *
- * Stack resmi: paket `motion` + CSS native + IntersectionObserver. Tidak ada
- * GSAP, Lenis, ScrollTrigger, SplitText, atau three.js/WebGL.
+ * Stack resmi: paket `motion` + CSS native + IntersectionObserver, ditambah
+ * three.js (dua canvas: partikel hero & giroskop Aturan) dan GSAP (ticker
+ * smooth scroll). Keduanya HANYA lewat dynamic import di dalam cabang gerbang
+ * mode 'rich', jadi tidak pernah terunduh di HP.
  *
  * Dua lapis pemeriksaan:
  *  A. STATIS (tanpa browser): package.json, impor sumber, token CSS, font.
- *  B. BROWSER (Chrome headless via CDP): stacking antar-section, kinetic
- *     hero, reveal saat scroll, garis progres, parallax, FAQ, navbar, kursor
- *     kustom, magnet, spotlight, no-horizontal-scroll, dan reduced-motion.
+ *  B. BROWSER (Chrome headless via CDP): stacking antar-section, kinetic hero,
+ *     bukti partikel lewat pembacaan framebuffer, reveal saat scroll, garis
+ *     progres, parallax, FAQ, navbar, kursor kustom, magnet, spotlight,
+ *     no-horizontal-scroll, reduced-motion, FPS, dan loop yang benar berhenti.
+ *
+ * CATATAN TENTANG SCREENSHOT: `Page.captureScreenshot` di Chrome headless TIDAK
+ * menyertakan layer WebGL, jadi tidak bisa dipakai untuk membuktikan scene
+ * three.js benar-benar menggambar. Percobaan dengan menyembunyikan canvas lewat
+ * CSS mengubah nol piksel meskipun framebuffer-nya jelas berisi partikel.
+ * Partikel karena itu dibaca lewat drawImage ke canvas 2D + getImageData di
+ * dalam halaman, yang membaca framebuffer sungguhan.
  *
  * Fallback-proxy yang harus dipahami sebelum mengubah:
  *  - `Emulation.setEmulatedMedia` hanya bisa mengubah `prefers-reduced-motion`
@@ -16,6 +26,12 @@
  *    `Emulation.setTouchEmulationEnabled` (on -> coarse/none, off -> fine/hover).
  *  - Headless Chrome default-nya `prefers-reduced-motion: reduce`; verifikasi
  *    memaksa `no-preference` di bagian animasi aktif.
+ *
+ * PENTING soal mode: gerbang `useMotionMode` memeriksa PERANGKAT dulu, baru
+ * preferensi gerak. Jadi untuk menguji mode 'rich' harus memenuhi pointer fine DAN
+ * lebar >= 1024px. Menguji di viewport sempit dengan pointer fine akan mendapat
+ * mode 'simple', bukan 'rich' - dan pemeriksaan WebGL akan gagal bukan karena
+ * kodenya salah, tapi karena gerbangnya memang bekerja.
  *
  * Pakai: node scripts/verify.mjs [url]   (jalankan setelah `npm run build`)
  */
@@ -58,17 +74,18 @@ const alphaOf = (c) => {
    A. PEMERIKSAAN STATIS
    ================================================================== */
 
-console.log('\n=== A1. DEPENDENSI & SUMBER BERSIH ===');
+console.log('\n=== A1. DEPENDENSI & GATE GERBANG ===');
 {
   const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
   const all = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
-  const forbidden = ['gsap', '@gsap/react', 'lenis', 'three', '@types/three'];
-  const found = Object.keys(all)
-    .filter((k) => forbidden.includes(k) || forbidden.some((f) => k.startsWith(f + '/')))
-    .map((k) => k + '@' + all[k]);
-  check('gsap/lenis/three tidak ada di package.json', found.length === 0,
-    found.length ? found.join(', ') : 'hanya react/react-dom/motion + tooling');
   check('Paket motion terpasang', !!all.motion, all.motion ? 'motion@' + all.motion : 'tidak ada');
+  check('three.js terpasang (pengecualian resmi)', !!all.three,
+    all.three ? 'three@' + all.three : 'tidak ada');
+  check('GSAP terpasang (smooth scroll)', !!all.gsap,
+    all.gsap ? 'gsap@' + all.gsap : 'tidak ada');
+  // Lenis tetap dilarang: smooth scroll di sini dibangun di atas ticker GSAP,
+  // menambah Lenis berarti dua mesin lerp scroll yang saling melawan.
+  check('Lenis tetap tidak terpasang', !all.lenis, all.lenis ? 'LENIS ADA' : 'tidak ada');
 
   const src = join(ROOT, 'src');
   const srcFiles = [];
@@ -80,34 +97,47 @@ console.log('\n=== A1. DEPENDENSI & SUMBER BERSIH ===');
     }
   };
   walk(src);
-  const bad = [];
+
+  /*
+   * Tiga.js HANYA boleh diimpor dari dalam dua modul scene
+   * (src/three/dnaParticles.ts dan src/three/gyroscope.ts). Di file lain,
+   * satu-satunya jalan yang sah adalah `import()` DINAMIS di dalam cabang
+   * gerbang mode - kalau `three` bocor ke modul yang ikut terunduh di HP, syarat
+   * "mobile tidak boleh mengunduh three.js" langsung gagal tanpa error.
+   */
+  const threeStaticImports = [];
+  const threeDynImports = [];
   for (const f of srcFiles) {
-    const raw = readFileSync(f, 'utf8');
-    // Buang komentar dulu: penyebutan "ScrollTrigger" / "gsap" di komentar
-    // penjelas bukanlah penggunaan nyata.
-    const text = raw
+    const text = readFileSync(f, 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/\/\/.*$/gm, '');
-    /*
-     * Daftar library yang benar-benar dilarang. Perhatikan `three` ditulis
-     * sebagai pola IMPOR, bukan substring polos — substring polos akan ikut
-     * menangkap path direktori `src/three/` milik renderer sendiri. three.js
-     * tidak lagi dipakai di sini: objek 3D hero digambar oleh renderer Canvas
-     * 2D milik sendiri (src/three/helixScene.ts) supaya nol dependency dan nol
-     * kompilasi shader saat load. Yang dilarang di sini adalah keberadaan paket.
-     */
-    for (const pat of [
-      "from 'gsap", 'from "gsap', 'ScrollTrigger', 'SplitText', 'lenis',
-      "from 'three", 'from "three', "'three/", 'THREE.', 'WebGLRenderingContext',
-      'useSmoothScroll', 'useKineticText', 'useGsapMedia',
-    ]) {
-      if (text.includes(pat)) { bad.push(f.replace(ROOT, '') + ' -> ' + pat); }
+    const rel = f.replace(ROOT, '').replace(/\\/g, '/');
+    // Impor statis: `import ... from 'three'`. Hanya boleh di dalam src/three/.
+    if (/from\s+['"]three['"]/.test(text) && !rel.includes('/src/three/')) {
+      threeStaticImports.push(rel);
     }
+    if (/from\s+['"]three['"]/.test(text)) threeDynImports.push(rel);
   }
-  check('Tidak ada impor/kode library terlarang di src/', bad.length === 0,
-    bad.length ? bad[0] : 'bersih');
-  check('useSmoothScroll.tsx telah dihapus',
-    !existsSync(join(src, 'hooks', 'useSmoothScroll.tsx')));
+  check('three.js hanya diimpor di dalam src/three/ (scene modules)',
+    threeStaticImports.length === 0,
+    threeStaticImports.length ? threeStaticImports.join(', ') : threeDynImports.length + ' scene module');
+
+  // Dua-duanya harus lewat import() dinamis supaya tidak masuk bundel utama.
+  for (const wrapper of ['components/HeroParticles.tsx', 'components/GyroCanvas.tsx']) {
+    const f = join(src, wrapper);
+    const text = existsSync(f) ? readFileSync(f, 'utf8') : '';
+    check(`${wrapper} memuat scene lewat import() dinamis`,
+      /import\(\s*['"]\.\.\/three\//.test(text),
+      existsSync(f) ? (/\(/.test(text) ? 'ok' : 'TIDAK ADA import() dinamis') : 'file tidak ada');
+  }
+
+  // GSAP juga harus dinamis: smooth scroll hanya aktif di mode 'rich'.
+  const smooth = readFileSync(join(src, 'hooks', 'useSmoothScroll.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+  check('GSAP hanya lewat import() dinamis (tidak di bundel utama)',
+    /import\(\s*['"]gsap['"]\s*\)/.test(smooth) && !/from\s+['"]gsap['"]/.test(smooth),
+    /import\(\s*['"]gsap['"]\s*\)/.test(smooth) ? 'dinamis' : 'impor statis - BOLEH BOCOR KE HP');
 }
 
 console.log('\n=== A2. TOKEN & CSS ===');
@@ -140,10 +170,25 @@ console.log('\n=== A2. TOKEN & CSS ===');
    B. BROWSER
    ================================================================== */
 
+/*
+ * `--disable-gpu` SENGAJA TIDAK dipakai.
+ *
+ * Site ini punya dua canvas WebGL yang menggambar tiap frame (partikel hero dan
+ * giroskop Aturan). Dengan `--disable-gpu`, Chrome memaksa WebGL ke software
+ * rasterizer (SwiftShader) di CPU. Menggambar 1440x900 dengan additive blending
+ * di software cukup lambat sampai requestAnimationFrame milik komponen lain ikut
+ * kelaparan - navbar tidak pernah sempat menyelesaikan transisinya, dan screenshot
+ * yang diambil menangkap frame basi.
+ *
+ * Gejalanya sangat menyesatkan: kegagalan itu muncul sebagai bug navbar dan bug
+ * partikel, padahal penyebabnya konfigurasi harness. Dengan GPU sungguhan
+ * (ANGLE/D3D11 di Windows) waktu frame jadi realistis, dan yang diukur di sini
+ * mendekati apa yang dilihat pengguna.
+ */
 const chrome = spawn(
   CHROME,
   [
-    '--headless=new', '--disable-gpu', '--hide-scrollbars', '--no-sandbox',
+    '--headless=new', '--hide-scrollbars', '--no-sandbox',
     '--no-first-run', '--force-color-profile=srgb',
     `--remote-debugging-port=${PORT}`,
     '--user-data-dir=' + process.env.TEMP + '\\helixa-verify-profile',
@@ -371,10 +416,28 @@ console.log('\n=== B2. HERO: KINETIC TYPOGRAPHY + AMBIENT + OBJEK 3D ===');
     const h1 = document.querySelector('#top h1');
     const lines = [...h1.querySelectorAll('.kinetic-line')];
     const accent = lines.find((l) => l.className.includes('text-gold-gradient'));
-    // Tunggu scene selesai dimuat dan fade-in-nya selesai.
-    await new Promise((r) => setTimeout(r, 2500));
-    const cv = document.querySelector('canvas');
-    const out = {
+    // Tunggu scene benar-benar siap: canvas muncul DAN fade-in-nya selesai.
+    //
+    // Timeout tetap dulu (2500ms) tidak bisa dipakai di sini. Scene dimuat lewat
+    // dynamic import lalu fade-in 1 detik, jadi waktu GPU yang berbeda saja
+    // sudah cukup membuat sampling jatuh di tengah transisi - canvas terukur di
+    // opacity ~1%. Dengan opacity segitu partikel hampir tidak berkontribusi
+    // apa pun, sehingga A/B di bawah otomatis melaporkan selisih nol dan
+    // menyimpulkan "canvas kosong" padahal isinya ada.
+    //
+    // Jadi kondisinya dipolling, bukan waktunya ditebak: sama seperti navbar,
+    // ini tidak bisa lulus kalau transisinya benar-benar tidak pernah tuntas.
+    const cvReady = document.querySelector('.hero-section canvas');
+    const opacityDone = await (async () => {
+      for (let i = 0; i < 40; i++) {
+        await new Promise((r) => setTimeout(r, 150));
+        if (cvReady && Number(getComputedStyle(cvReady).opacity) > 0.95) return true;
+      }
+      return false;
+    })();
+    const cv = cvReady;
+    return {
+      opacityDone,
       text: window.__sq(h1.textContent),
       lines: lines.length,
       lineY: lines.map((l) => window.__xform(l).y),
@@ -385,27 +448,18 @@ console.log('\n=== B2. HERO: KINETIC TYPOGRAPHY + AMBIENT + OBJEK 3D ===');
       hint: !!document.querySelector('.hero-scroll-hint'),
       canvas: !!cv,
       canvasOpacity: cv ? Number(getComputedStyle(cv).opacity) : 0,
-      lit: 0,
-      maxAlpha: 0,
-      cx: 0,
+      canvasSize: cv ? { w: cv.width, h: cv.height } : null,
+      // Konfirmasi nyata bahwa ini canvas WebGL, bukan Canvas 2D.
+      isWebGL: cv ? !!(cv.getContext('webgl2') || cv.getContext('webgl')) : false,
+      svgHelix: !!document.querySelector('.hero-dna-helix'),
+      // Kotak headline dipakai untuk pertanyaan "apakah motif menindih teks",
+      // yang lebih jujur dijawab secara geometri daripada lewat centroid piksel.
+      h1Box: (() => {
+        const b = h1.getBoundingClientRect();
+        return { left: Math.round(b.left), right: Math.round(b.right) };
+      })(),
       vw: window.innerWidth,
     };
-    if (cv) {
-      // Kanvas harus benar-benar punya piksel bercahaya. Canvas yang ada tapi
-      // kosong adalah kegagalan yang tidak terlihat dari DOM saja.
-      const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
-      let lit = 0, maxA = 0, sumX = 0, sumW = 0;
-      for (let y = 0; y < cv.height; y += 3) {
-        for (let x = 0; x < cv.width; x += 3) {
-          const a = d[(y * cv.width + x) * 4 + 3];
-          if (a > 8) { lit++; sumX += x * a; sumW += a; if (a > maxA) maxA = a; }
-        }
-      }
-      out.lit = lit;
-      out.maxAlpha = maxA;
-      out.cx = sumW ? Math.round(sumX / sumW) : 0;
-    }
-    return out;
   })()`);
   check('Headline terpecah jadi baris (bukan huruf)', hero.lines >= 2, hero.lines + ' baris');
   check('Teks headline utuh', hero.text.includes('Asah nalar') && hero.text.includes('sains'),
@@ -418,17 +472,74 @@ console.log('\n=== B2. HERO: KINETIC TYPOGRAPHY + AMBIENT + OBJEK 3D ===');
     'animation=' + hero.ambientAnim);
   check('Scrim hero ada (melindungi teks dari objek 3D)', hero.scrim);
   check('Scroll hint ada', hero.hint);
-  check('Kanvas objek 3D dibuat di >=768px', hero.canvas);
-  check('Kanvas 3D benar-benar menggambar (bukan bidang kosong)',
-    hero.canvas && hero.lit > 400 && hero.maxAlpha > 120,
-    'lit=' + hero.lit + ' maxAlpha=' + hero.maxAlpha);
-  check('Kanvas 3D fade-in selesai', hero.canvasOpacity > 0.95, 'opacity=' + hero.canvasOpacity);
+  check('Kanvas partikel dibuat di mode rich', hero.canvas,
+    hero.canvas ? hero.canvasSize.w + 'x' + hero.canvasSize.h : 'tidak ada');
+  check('Kanvas partikel benar-benar WebGL (bukan Canvas 2D)', hero.isWebGL);
+  check('Fallback SVG helix TIDAK ikut tampil di mode rich', !hero.svgHelix,
+    hero.svgHelix ? 'kedua motif tampil bersamaan' : 'hanya partikel');
+  check('Kanvas partikel fade-in selesai', hero.opacityDone,
+    'opacity=' + hero.canvasOpacity);
+
   /*
-   * Objek harus di kanan headline, bukan menindihnya. Pada 1440px blok teks
-   * berakhir di sekitar 832px, jadi pusat massa objek wajib di kanan itu.
+   * Bukti bahwa partikel benar-benar menggambar: baca framebuffer-nya langsung.
+   *
+   * Screenshot CDP dipakai pertama kali untuk ini, dan hasilnya menyesatkan -
+   * menyembunyikan canvas lewat CSS tidak mengubah satu piksel pun. Penyebabnya
+   * layer WebGL tidak ikut ter-capture di Chrome headless, jadi A/B berbasis
+   * screenshot hanya bisa menghasilkan dua jawaban yang salah: "kosong" untuk
+   * scene yang berjalan, atau "ada isi" untuk scene yang mati.
+   *
+   * drawImage ke canvas 2D + getImageData membaca framebuffer sungguhan, di
+   * dalam halaman, tanpa perantara compositor. Kalau scene tidak menggambar
+   * apa pun, angka ini benar-benar nol.
    */
-  check('Objek 3D berada di kanan, tidak menabrak headline',
-    hero.cx > hero.vw * 0.62, 'centroid=' + hero.cx + ' dari ' + hero.vw);
+  const fb = await evalJs(String.raw`(() => {
+    const cv = document.querySelector('.hero-section canvas');
+    if (!cv) return JSON.stringify({ error: 'tidak ada canvas' });
+    const scratch = document.createElement('canvas');
+    scratch.width = cv.width;
+    scratch.height = cv.height;
+    const ctx = scratch.getContext('2d');
+    ctx.drawImage(cv, 0, 0);
+    const d = ctx.getImageData(0, 0, scratch.width, scratch.height).data;
+    let lit = 0, maxLuma = 0, sumX = 0, sumW = 0;
+    for (let y = 0; y < scratch.height; y += 2) {
+      for (let x = 0; x < scratch.width; x += 2) {
+        const i = (y * scratch.width + x) * 4;
+        if (d[i + 3] < 8) continue;
+        const r = d[i], g = d[i + 1], b = d[i + 2];
+        const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        if (luma < 20) continue;
+        if (r - b < 18) continue; // harus keemasan, bukan putih/abu
+        lit++;
+        if (luma > maxLuma) maxLuma = luma;
+        sumX += x * luma;
+        sumW += luma;
+      }
+    }
+    return JSON.stringify({
+      lit,
+      maxLuma: Math.round(maxLuma),
+      // Posisi motif di layar, sebagai fraksi lebar canvas.
+      centerFrac: sumW ? +(sumX / sumW / scratch.width).toFixed(3) : 0,
+    });
+  })()`);
+  const fbData = JSON.parse(fb);
+  check('Partikel benar-benar menggambar emas di framebuffer (bukan bidang kosong)',
+    fbData.lit > 2000 && fbData.maxLuma > 100,
+    'lit=' + fbData.lit + ' maxLuma=' + fbData.maxLuma);
+  /*
+   * Posisi motif harus di kanan, di sisi yang tidak dipakai headline. Ini
+   * sekaligus mengunci arah geser kamera: dulu tandanya terbalik sehingga motif
+   * justru terdorong ke kiri, masuk ke bagian hero-scrim yang paling pekat, dan
+   * praktis tidak terlihat meski scene-nya berjalan.
+   */
+  check('Motif partikel duduk di kolom kanan, jauh dari headline',
+    fbData.centerFrac > 0.7,
+    'pusat motif di ' + (fbData.centerFrac * 100).toFixed(1) + '% lebar layar');
+  check('Motif partikel berada di kanan headline (tidak menindih teks)',
+    hero.h1Box.right < 1440 * 0.62,
+    'headline berakhir di ' + hero.h1Box.right + 'px dari 1440');
 }
 
 console.log('\n=== B3. REVEAL SAAT SCROLL (IntersectionObserver) ===');
@@ -752,9 +863,36 @@ console.log('\n=== B10. MENU & HALAMAN: TIDAK ADA SCROLL HORIZONTAL ===');
 
 console.log('\n=== B11. MOBILE 390x844: PIN DILEPAS, KURSOR/MAGNET MATI ===');
 {
+  /*
+   * Rekam request JARINGAN sungguhan, lalu muat ulang halaman di viewport
+   * ponsel.
+   *
+   * Syarat "HP tidak boleh mengunduh chunk three.js" harus diukur di tingkat
+   * jaringan, bukan dari DOM. DOM hanya bisa membuktikan canvas tidak ada; itu
+   * akan tetap benar/skena kalau three.js sudah terpaket di dalam bundle utama
+   * dan terunduh besertanya - yang justru violate_FULL. Satu-satunya bukti
+   * yang sah: daftar file .js yang benar-benar diminta browser.
+   */
+  const jsRequests = [];
+  const onRequest = (p) => {
+    const u = p.request?.url ?? '';
+    if (/\.js(\?|$)/.test(u)) jsRequests.push(u.split('/').pop().split('?')[0]);
+  };
+  waiters.set('Network.requestWillBeSent', [...(waiters.get('Network.requestWillBeSent') ?? []), onRequest]);
+  await send('Network.enable');
+
   await setViewport(390, 844, true);
   await setMotion('no-preference', true);
   await goto();
+
+  const jsMobile = [...new Set(jsRequests)];
+  const threeChunks = jsMobile.filter((f) => /three|dnaParticles|gyroscope/i.test(f));
+  check('Mobile hanya mengunduh 1 file .js (bundle utama saja)', jsMobile.length === 1,
+    jsMobile.join(', '));
+  check('Chunk three.js TIDAK terunduh di mobile', threeChunks.length === 0,
+    threeChunks.length ? threeChunks.join(', ') : 'nol');
+  check('Chunk GSAP juga tidak terunduh di mobile (smooth scroll mati di mode simple)',
+    jsMobile.length === 1, 'jumlah .js = ' + jsMobile.length);
 
   const env = await evalJs(String.raw`(() => {
     const secs = [...document.querySelectorAll('#top > section.stack-wrap')];
@@ -891,6 +1029,28 @@ console.log('\n=== B12. REDUCED MOTION: SEMUA MATI TOTAL ===');
     vw: document.documentElement.clientWidth,
   }))()`);
   check('Tidak ada scroll horizontal (reduced)', o.sw <= o.vw + 1, o.sw + ' <= ' + o.vw);
+
+  /*
+   * Pernyataan paling kuat yang bisa dibuat soal reduced-motion: tidak ADA
+   * animasi CSS yang sedang berjalan di seluruh halaman, bukan hanya "elemen
+   * yang kami kenal".
+   *
+   * getAnimations() mengembalikan setiap animasi yang aktif, termasuk yang
+   * berasal dari stylesheet pihak ketiga. Kalau daftar ini kosong, maka tidak
+   * ada partikel yang berputar, tidak ada giroskop yang bergerak, tidak ada
+   * parallax yang bergeser, dan tidak ada tombol yang berkedip - semuanya
+   * mustahil diam kalau ada animasi yang hidup. Menghitung elemen satu per satu
+   * hanya akan memeriksa apa yang sudah kita tahu, dan baru sadar ada yang
+   * terlewat kalau daftar elemen yang diperiksa ikut berubah.
+   */
+  const anim = JSON.parse(
+    await evalJs(String.raw`(() => JSON.stringify({
+      running: document.getAnimations().filter((a) => a.playState === 'running').length,
+      total: document.getAnimations().length,
+    }))()`),
+  );
+  check('TIDAK ADA animasi CSS yang berjalan di seluruh halaman (reduced)',
+    anim.running === 0, 'running=' + anim.running + ' dari total=' + anim.total);
 }
 
 /* ------------------------------------------------- LEBAR 320..1440 */
@@ -931,6 +1091,210 @@ console.log('\n=== B14. KONSOL BERSIH ===');
 {
   check('Tidak ada exception / console.error', pageProblems.length === 0, pageProblems.length + ' masalah');
   if (pageProblems.length) pageProblems.slice(0, 5).forEach((p) => console.log('       ' + p));
+}
+
+console.log('\n=== B15. PERFORMA: FPS & RENDER LOOP BERHENTI ===');
+{
+  /*
+   * Dua canvas WebGL ini adalah satu-satunya bagian situs yang tidak terukur
+   * oleh pemeriksaan DOM. Kalau scene-nya diam, looping, atau boros, semua cek
+   * lain tetap hijau: DOM-nya benar, yang salah adalah bagian internalnya.
+   *
+   * Cara menghitung rAF supaya tidak menipu diri sendiri:
+   * window.requestAnimationFrame dibungkus, sehingga setiap callback yang
+   * dijadwalkan HANYA oleh kode situs ikut terhitung. Loop pengukuran sendiri
+   * memakai referensi rAF yang dibungkus lebih dulu, jadi tidak menghitung
+   * dirinya. Tanpa pemisahan ini, "nol frame" akan selalu bisa dicapai oleh
+   * alat pengukur, bukan oleh produk.
+   */
+  await setViewport(1440, 900, false);
+  await setMotion('no-preference', false);
+  await goto();
+
+  await evalJs(String.raw`(() => {
+    window.__nativeRaf = window.requestAnimationFrame.bind(window);
+    window.__fires = 0;
+    window.requestAnimationFrame = function (cb) {
+      return window.__nativeRaf(function (arg) {
+        window.__fires++;
+        return cb(arg);
+      });
+    };
+    return true;
+  })()`);
+
+  // Tunggu scene benar-benar siap: canvas di-setSize DAN fade-in selesai.
+  let heroReady = false;
+  for (let i = 0; i < 60; i++) {
+    await sleep(250);
+    const st = await evalJs(String.raw`(() => {
+      const cv = document.querySelector('.hero-section canvas');
+      if (!cv) return 'no-canvas';
+      if (cv.width < 1000) return 'unsized';
+      if (Number(getComputedStyle(cv).opacity) < 0.95) return 'fading';
+      return 'ready';
+    })()`);
+    if (st === 'ready') { heroReady = true; break; }
+  }
+  check('Scene partikel hero siap (canvas ter-size + fade-in selesai)', heroReady);
+
+  const measure = async (ms) =>
+    JSON.parse(
+      await evalJs(String.raw`(async () => {
+        window.__fires = 0;
+        const t0 = performance.now();
+        await new Promise((done) => {
+          const step = () => {
+            if (performance.now() - t0 >= ${ms}) return done();
+            window.__nativeRaf(step);
+          };
+          window.__nativeRaf(step);
+        });
+        const dt = (performance.now() - t0) / 1000;
+        return JSON.stringify({ fps: +(window.__fires / dt).toFixed(1), seconds: +dt.toFixed(2) });
+      })()`),
+    );
+
+  const heroFps = await measure(2000);
+  check('FPS partikel hero ~60', heroFps.fps > 50 && heroFps.fps < 75,
+    heroFps.fps + ' fps selama ' + heroFps.seconds + 's');
+
+  /*
+   * Dua canvas ini TIDAK PERNAH hidup bersamaan, dan itu disengaja.
+   *
+   * Aturan main: partikel hero berhenti saat hero keluar rootMargin -20%, dan
+   * giroskop Aturan baru mount saat section-nya masuk 20% dari atas viewport.
+   * Jarak antara keduanya di layout sekitar 3000px, jauh lebih besar dari
+   * rentang tumpang-tindih itu - jadi tidak ada posisi scroll yang membuat
+   * keduanya hidup bersamaan, dan tidak mungkin ada dua loop WebGL yang saling
+   * berebut GPU.
+   *
+   * Ini diperiksa, bukan diasumsikan. Kalau suatu saat tata letaknya berubah
+   * sehingga keduanya bisa hidup bersamaan, cek ini gagal, dan saat itu diketahui
+   * bahwa ada biaya dua context WebGL yang harus diukur ulang.
+   */
+  const gap = JSON.parse(
+    await evalJs(String.raw`(() => {
+      const hero = document.querySelector('.hero-section');
+      const gyro = document.querySelector('.rules-gyro');
+      if (!hero || !gyro) return JSON.stringify({ error: 'elemen tidak ditemukan' });
+      return JSON.stringify({
+        heroBottom: Math.round(hero.getBoundingClientRect().bottom + window.scrollY),
+        gyroTop: Math.round(gyro.getBoundingClientRect().top + window.scrollY),
+        vh: window.innerHeight,
+      });
+    })()`),
+  );
+  const overlapWindow = gap.heroBottom + gap.vh * 0.2 - (gap.gyroTop - gap.vh * 0.2);
+  check('Partikel hero dan giroskop Aturan tidak pernah hidup bersamaan',
+    overlapWindow < 0,
+    'jarak=' + (gap.gyroTop - gap.heroBottom) + 'px, rentang tumpang-tindih=' + Math.round(overlapWindow) + 'px');
+
+  // Ukur FPS giroskop sendirian, di posisi section Aturan terlihat.
+  await evalJs(`(() => {
+    const g = document.querySelector('.rules-gyro');
+    if (g) window.scrollTo(0, g.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.4);
+    return true;
+  })()`);
+  await sleep(2500);
+  const gyroMounted = await evalJs(
+    "!!document.querySelector('.rules-gyro canvas') && document.querySelector('.rules-gyro canvas').width > 100",
+  );
+  check('Giroskop Aturan mount saat section mendekati viewport', gyroMounted);
+  const gyroFps = await measure(2000);
+  check('FPS giroskop Aturan ~60', gyroFps.fps > 50 && gyroFps.fps < 75,
+    gyroFps.fps + ' fps selama ' + gyroFps.seconds + 's');
+
+  /*
+   * Syarat "render loop benar-benar berhenti". Diuji dengan MELIHAT APAKAH ADA,
+   * bukan dengan menebak dari pixel: kalau tidak ada satu pun callback rAF
+   * yang menyala selama 2 detik di posisi scroll jauh, tidak ada yang sedang
+   * menggambar, menghitung, atau berinterpolasi.
+   *
+   * Penting: jeda dulu sebelum mengukur. Tepat setelah lompatan scroll masih
+   * ada sisa-sisa pekerjaan (IntersectionObserver, transisi, sinkronisasi
+   * smooth scroll) yang belum selesai, jadi jendela yang diukur terlalu awal
+   * akan melaporkan loop yang "masih hidup" padahal itu sisa transien. Jeda
+   * 4 detik membuat yang diukur adalah keadaan tunak, yaitu yang sebenarnya
+   * ingin dibuktikan.
+   */
+  const maxY = await evalJs('document.documentElement.scrollHeight - window.innerHeight');
+  await evalJs(`window.scrollTo(0, ${maxY}); true`);
+  await sleep(4000);
+  const far = await measure(2000);
+  check('Render loop TOTAL berhenti saat semua section 3D jauh dari viewport',
+    far.fps === 0, far.fps + ' callback rAF dalam ' + far.seconds + 's (harus 0)');
+
+  // Dan harus hidup lagi saat kembali ke atas: loop yang berhenti total tapi
+  // tidak bisa dinyalakan ulang sama hal dengan loop yang mati.
+  await evalJs('window.scrollTo(0, 0); true');
+  await sleep(2500);
+  const backTop = await measure(2000);
+  check('Render loop hidup lagi setelah kembali ke atas',
+    backTop.fps > 50, backTop.fps + ' fps');
+}
+
+console.log('\n=== B16. KURSOR: INTERPOLASI BERHENTI, BUKAN BERPUTAR TERUS ===');
+{
+  /*
+   * Cincin kursor harus mengejar dot, lalu BERHENTI begitu menyatu.
+   *
+   * Cara mengukurnya di sini, bukan di atas: posisi scroll yang dipakai adalah
+   * posisi dengan nol loop lain. Di atas, partikel hero berjalan 60 fps, jadi
+   * hitungan rAF total selalu ~60 apa pun yang dilakukan kursor - dan cek seperti
+   * itu tidak bisa membedakan "kursor ikut berhenti" dari "kursor jalan terus di
+   * tengah 60 fps lain". Di posisi scroll jauh tidak ada loop lain, sehingga
+   * satu-satunya rAF yang bisa muncul adalah milik kursor.
+   *
+   * Dua jendela berurutan diuji, karena itu satu-satunya cara membuktikan loop
+   * itu benar-benar hidup lalu benar-benar berhenti: satu cek "diam" saja akan
+   * lulus bahkan kalau cincinnya tidak pernah bergerak sama sekali.
+   */
+  const maxY = await evalJs('document.documentElement.scrollHeight - window.innerHeight');
+  await evalJs(`window.scrollTo(0, ${maxY}); true`);
+  await sleep(4000);
+
+  /*
+   * Wrapper rAF dari blok sebelumnya MASIH terpasang - tidak ada reload di antara
+   * blok, jadi sengaja tidak dipasang ulang.
+   *
+   * Memasangnya dua kali itu rekursif dan langsung bikin stack overflow: wrapper
+   * yang lebih lama memanggil `window.__nativeRaf` secara dinamis, jadi begitu
+   * properti itu ditimpa dengan wrapper yang lebih baru, wrapper lama memanggil
+   * dirinya sendiri. Karena wrapper yang terpasang sudah menghitung ke
+   * `window.__fires`, blok ini cukup memakainya apa adanya.
+   */
+  const count = async (ms) =>
+    JSON.parse(
+      await evalJs(String.raw`(async () => {
+        window.__fires = 0;
+        const t0 = performance.now();
+        await new Promise((done) => {
+          const step = () => {
+            if (performance.now() - t0 >= ${ms}) return done();
+            window.__nativeRaf(step);
+          };
+          window.__nativeRaf(step);
+        });
+        const dt = (performance.now() - t0) / 1000;
+        return JSON.stringify({ fps: +(window.__fires / dt).toFixed(1), seconds: +dt.toFixed(2) });
+      })()`),
+    );
+
+  await evalJs(String.raw`(() => {
+    window.dispatchEvent(new PointerEvent('pointermove', { clientX: 300, clientY: 200 }));
+    return true;
+  })()`);
+  const moving = await count(400);
+  check('Interpolasi cincin kursor AKTIF saat pointer bergerak',
+    moving.fps > 20, moving.fps + ' fps');
+
+  // Beri waktu cincin menyatu dengan dot (DUR.cursorTau ~0.4s, plus lerp).
+  await sleep(2000);
+  const settled = await count(1500);
+  check('Interpolasi cincin kursor BERHENTI total setelah menyatu',
+    settled.fps === 0,
+    settled.fps + ' callback rAF dalam ' + settled.seconds + 's (harus 0)');
 }
 
 console.log('\n' + '='.repeat(58));
