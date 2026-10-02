@@ -581,7 +581,7 @@
    * 720px mencegah meluber keluar section yang tingginya 1000px.
    */
   .rules-gyro {
-    --gyro-size: clamp(280px, 66vh, 720px);
+    --gyro-size: clamp(560px, 132vh, 1440px);
 
     position: absolute;
     left: 50%;
