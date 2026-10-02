@@ -6,11 +6,13 @@ TypeScript + Tailwind v4.
 
 Stack gerak resmi: paket **`motion`** (Motion for React) + CSS native + IntersectionObserver,
 ditambah **three.js** untuk dua objek 3D (pusaran partikel DNA di hero, armillary di Aturan) dan
-**GSAP** hanya untuk clock smooth scroll. Semua tambahan itu di balik satu gerbang:
-`useMotionMode()`.
+**GSAP** untuk clock smooth scroll serta scroll lock "Cara Ikut". Semua tambahan itu di balik satu
+gerbang: `useMotionMode()`.
 
-> Tanpa Lenis / ScrollTrigger / SplitText. Tanpa `ScrollSmoother` — alasannya ada di bagian
-> [Smooth scroll](#smooth-scroll-bukan-scrollsmoother).
+> Tanpa Lenis / SplitText. Tanpa `ScrollSmoother` — alasannya ada di bagian
+> [Smooth scroll](#smooth-scroll--bukan-scrollsmoother). `ScrollTrigger` **dipakai**, tapi hanya
+> untuk satu hal: mengunci scroll di "Cara Ikut" — lihat
+> [Scroll lock Cara Ikut](#scroll-lock-cara-ikut--scrolltrigger-dengan-pin).
 
 Prinsip desain: **80% obsidian, 10% gading, 10% emas cair.** Kalau ragu, kurangi.
 
@@ -37,7 +39,7 @@ npm run build && npm run preview -- --port 4200 --strictPort
 
 # terminal 2
 npm run check:responsive   # 11 viewport: overflow, teks terpotong, target sentuh
-npm run check:verify       # cek statis + 16 bagian perilaku, animasi & performa
+npm run check:verify       # cek statis + 17 bagian perilaku, animasi, scroll & performa
 npm run check:webgl-off    # WebGL dimatikan: hero jatuh ke SVG helix
 npm run check:lighthouse   # Lighthouse Mobile (butuh install terpisah, lihat catatan)
 ```
@@ -80,7 +82,9 @@ berubah, interaksi yang benar-benar berfungsi.
    sekali saat mount), teks utuh, kata "sains" bergradasi emas; ambient glow statis
 3. **Scroll reveal** — semua grup/single reveal (IntersectionObserver) terpicu setelah
    scroll penuh, nol elemen tertinggal `opacity: 0`
-4. **Garis progres** — satu elemen `scaleX`/`scaleY` tumbuh mengikuti scroll jendela
+4. **Garis progres** — dua implementasi, dipilih mode gerak: GSAP ScrollTrigger di `rich`
+   (section ter-pin, lihat [Scroll lock](#scroll-lock-cara-ikut--scrolltrigger-dengan-pin)),
+   `useScrollProgress` di mode lain. Keduanya harus tumbuh mengikuti scroll
 5. **Parallax** — tiga simbol matematika (Σ, φ, f(x)) bergeser dengan laju berbeda; HANYA
    ≥1024px + pointer fine; murni berbasis posisi scroll, bukan rotasi otomatis
 6. **FAQ akordeon** — CSS `grid-template-rows`, `inert` pada panel tertutup, satu-buka,
@@ -95,21 +99,28 @@ berubah, interaksi yang benar-benar berfungsi.
    spotlight diperbarui; keduanya mati di layar sentuh
 10. **Mobile** — `pointer: coarse` nyata: **rekaman jaringan** membuktikan hanya 1 file `.js`
     yang diunduh (bundle utama), tanpa chunk three.js maupun GSAP; canvas 3D tidak pernah
-    dibuat, pin sticky dilepas (normal flow, overlap `-28px`), kursor/magnet/parallax mati,
-    menu modal `dialog` + `aria-modal`, Esc menutup
+    dibuat, pin sticky dilepas (normal flow, overlap `-28px`), scroll lock tidak dipasang,
+    kursor/magnet/parallax mati, menu modal `dialog` + `aria-modal`, Esc menutup
 11. **Reduced motion** — section kembali `relative`, kartu tanpa radius/bayangan, teks
     langsung terbaca, scroll native, kursor mati, canvas 3D tidak dibuat, dan **nol animasi
     CSS berjalan di seluruh halaman** (`document.getAnimations()`)
 12. **Sweep lebar** — 320/375/768/1024/1440 tanpa scroll horizontal, FAQ tetap bisa diklik
 13. **Bukti partikel** — framebuffer WebGL dibaca lewat `drawImage` + `getImageData` di dalam
-    halaman; motif harus berada di ≥70% lebar layar (tidak menindih headline)
+    halaman; motif harus berada di TENGAH layar (50% lebar backing store, bukan lagi di sisi kanan)
 14. **Konsol bersih** — nol exception, nol `console.error`
 15. **Performa** — FPS partikel hero dan giroskop Aturan diukur lewat penghitung rAF yang
     tidak menghitung dirinya sendiri; render loop harus **nol** callback saat semua section
     3D jauh dari viewport, dan hidup lagi setelah kembali ke atas. Juga diperiksa bahwa
-    kedua canvas 3D tidak pernah hidup bersamaan (jaraknya 3071px)
+    kedua canvas 3D tidak pernah hidup bersamaan, dan rAF yang tersisa saat idle
+    benar-benar milik ScrollTrigger
 16. **Kursor berhenti** — di posisi scroll tanpa loop lain, interpolasi cincin harus aktif
     saat pointer bergerak dan **nol** setelah menyatu
+17. **Smooth scroll & scroll lock** — regresi "halaman bergetar" (nol bingkai mundur, nol
+    bingkai beku, lompatan antar-bingkai jauh lebih kecil daripada langkah terjauh)
+    plus scroll lock Cara Ikut: `pin` benar di `top: 0`, runway 2 tinggi viewport terpakai,
+    garis **penuh tepat saat halaman dilepas**, tidak pernah mundur, keempat node menyala,
+    halaman tidak beku saat terkunci, dan anchor navbar yang melewati section terkunci
+    tetap mendarat di posisinya
 
 ### Jebakan pengukuran yang sudah ditangani
 
@@ -181,6 +192,29 @@ berubah, interaksi yang benar-benar berfungsi.
    membuat wrapper lama memanggil dirinya sendiri (karena ia membaca
    `window.__nativeRaf` secara dinamis) dan langsung memicu stack overflow. Karena itu B16
    sengaja memakai wrapper B15 apa adanya.
+10. **`pin: true` membungkus targetnya sendiri dengan `<div class="pin-spacer">`.** Section
+    yang ter-pin turun satu tingkat dari `#top`, jadi selector `#top > section` berhenti
+    melihatnya — dan blok pelapor ikut bilang "7 section, z-index 10..80" seolah-olah section
+    Cara Ikut hilang, padahal isinya utuh. Penghitungan `__docTop` harus memakai selector yang
+    sama dengan blok yang menguji section, kalau tidak posisinya ikut salah.
+11. **rAF milik ScrollTrigger tidak boleh ikut dihitung sebagai loop gambar.** ScrollTrigger
+    menjalankan rAF sendiri selama halaman hidup dan tidak punya API untuk menghentikannya
+    (lihat [Scroll lock](#scroll-lock-cara-ikut--scrolltrigger-dengan-pin)). Kalau ikut
+    dihitung, dua ukuran justru berbalik arah: FPS jadi dua kali lipat karena satu bingkai
+    punya dua callback, dan cek "render loop berhenti" selalu gagal padahal tidak ada loop
+    gambar yang menyala. Pemisahnya bukan tebakan bentuk kode: `verify.mjs` **membaca nama
+    fungsi yang masuk ke `requestAnimationFrame(...)` di chunk ScrollTrigger hasil build yang
+    sama**. Nama minified berubah tiap build, tapi set itu dibaca ulang tiap verifikasi, jadi
+    tidak pernah basi — dan kalau chunk-nya hilang, verifikasi gagal keras. Pagar atasnya
+    diuji sendiri: rAF yang tersisa saat idle harus berada di rentang ticker ScrollTrigger,
+    bukan 60/s loop lain yang menyamar.
+12. **Probe scroll harus berkecepatan realistis.** Menggulirkan wheel satu putaran per bingkai
+    melewati detail yang tidak pernah dilihat pengguna, dan menghasilkan bacaan yang
+    menyesatkan — runway terukur terpakai 1363px lewat scaffolding cepat, padahal di
+    kecepatan nyata (satu wheel per 6 bingkai) 1823px dari 1800px. Sebaliknya, mengukur
+    sampai dasar dokumen melaporkan "jeda beku 44 bingkai" yang seluruhnya artefak: di dasar
+    halaman memang tidak ada lagi jarak tersisa, dan itu benar, bukan getaran. Jadi putaran
+    wheel dibatasi 55% panjang scroll, dan rekam berhenti begitu input berhenti.
 
 ---
 
@@ -197,7 +231,7 @@ Helixa Olympiad/
 ├─ public/fonts/           # Cormorant Garamond + Manrope variable woff2 (SIL OFL, latin, ~62 kB)
 ├─ scripts/
 │  ├─ audit.mjs                # 11 viewport + deteksi overflow / teks terpotong / target sentuh
-│  ├─ verify.mjs               # cek statis + B1-B16 perilaku, animasi & performa (131 cek)
+│  ├─ verify.mjs               # cek statis + B1-B17 perilaku, animasi, scroll & performa (167 cek)
 │  ├─ verify-webgl-off.mjs     # WebGL dimatikan: hero jatuh ke SVG helix (7 cek)
 │  └─ lighthouse.mjs           # Lighthouse Mobile lewat Node API (install di luar repo)
 └─ src/
@@ -215,7 +249,8 @@ Helixa Olympiad/
    │  ├─ useIsoLayoutEffect.ts  # useLayoutEffect aman-SSR
    │  ├─ useMediaQuery.ts       # abonemen MQ sebagai state React
    │  ├─ useMotionMode.ts       # gerbang 'reduced' | 'rich' | 'simple' — device-first
-   │  ├─ useSmoothScroll.ts     # smooth scroll GSAP (gsap.ticker + window.scrollTo)
+   │  ├─ useSmoothScroll.ts     # SATU-PENULIS scroll: wheel non-passive + gsap.ticker + scrollTo
+   │  ├─ useGsapScrollLock.ts   # pin + runway + garis progres "Cara Ikut" (ScrollTrigger)
    │  ├─ useScrollProgress.ts   # progress scroll JENDELA untuk section sticky
    │  └─ useMagnetic.ts         # registerHoverTarget + subscribeHoverState (CSS var)
    └─ components/
@@ -223,12 +258,12 @@ Helixa Olympiad/
       ├─ Navbar.tsx
       ├─ Hero.tsx          # kinetic per baris + ambient + gerbang partikel/SVG
       ├─ HeroParticles.tsx # pembungkus: gerbang mode rich + dynamic import + fallback
-      ├─ GyroCanvas.tsx    # mount saat dekat viewport, dispose saat jauh
+      ├─ GyroCanvas.tsx    # mount saat dek viewport, ganti kanvas saat context dilepas
       ├─ WhyHelixa.tsx     # stack card (1 dari 2 section yang di-pin)
       ├─ PerdanaInfo.tsx   # stack card (2 dari 2 section yang di-pin)
-      ├─ HowToJoin.tsx     # stack rule + parallax 3 simbol matematika
+      ├─ HowToJoin.tsx     # stack rule + scroll lock GSAP + parallax 3 simbol matematika
       ├─ JudgesPartners.tsx
-      ├─ RulesTransparency.tsx  # dekorasi <GyroCanvas/>
+      ├─ RulesTransparency.tsx  # header kanan, daftar kiri, armillary di kolom kanan
       ├─ Faq.tsx           # akordeon CSS grid-rows + inert; stack rule
       ├─ ClosingCta.tsx
       ├─ ornaments/
@@ -236,7 +271,7 @@ Helixa Olympiad/
       │  ├─ MathSymbols.tsx   # Σ, φ, f(x) dengan parallax per-simbol
       │  └─ GrainOverlay.tsx
       └─ ui/
-         ├─ Section.tsx    # stack-wrap + z + kartu (+ prop `decor`)
+         ├─ Section.tsx    # stack-wrap + z + kartu (+ prop `decor`, forwardRef untuk pin)
          ├─ Reveal.tsx     # Reveal / RevealGroup (IO, tanpa selector)
          ├─ Eyebrow.tsx
          ├─ SpotlightCard.tsx
@@ -323,7 +358,7 @@ WebGL — dan keduanya hanya di mode `rich`:
 | `.hero-ambient` | Glow radial CSS murni, statis | Latar hero | selalu |
 | `HeroParticles` | **WebGL (three.js)**: 560 partikel emas membentuk heliks DNA | Latar hero | `rich` saja |
 | `DnaHelix` | Dua untai sinusoidal berpelintir + anak tangga (SVG) | Section Kenapa Helixa | selalu |
-| `GyroCanvas` | **WebGL (three.js)**: 4 cincin `TorusGeometry` wireframe (armillary) | Dekorasi sisi Aturan | `rich` saja |
+| `GyroCanvas` | **WebGL (three.js)**: 4 cincin `TorusGeometry` wireframe (armillary) | Kolom kanan section Aturan | `rich` saja |
 | `MathSymbols` | Σ, φ, f(x) — **parallax per-simbol** | Latar Cara Ikut | `rich` saja |
 | `GrainOverlay` | `feTurbulence` data-URI | `fixed inset-0`, `pointer-events-none` | selalu |
 | `.hero-scrim` | Gradien gelap **di atas** canvas, melindungi teks dari objek | Antara canvas & konten | selalu |
@@ -334,8 +369,8 @@ Semua fitur baru di halaman ini melewati satu hook. Ia mengembalikan tiga mode:
 
 | Mode | Kapan | Isinya |
 |---|---|---|
-| `rich` | pointer fine **dan** lebar ≥1024px, tanpa reduced-motion | Semua: kursor, dua WebGL, parallax, smooth scroll |
-| `simple` | HP / tablet / pointer coarse | **Persis seperti sebelum revisi ini.** Tidak ada three.js, tidak ada GSAP, tidak ada kursor, tidak ada parallax |
+| `rich` | pointer fine **dan** lebar ≥1024px, tanpa reduced-motion | Semua: kursor, dua WebGL, parallax, smooth scroll, scroll lock Cara Ikut |
+| `simple` | HP / tablet / pointer coarse | **Persis seperti sebelum revisi ini.** Tidak ada three.js, tidak ada GSAP (jadi scroll lock pun tidak), tidak ada kursor, tidak ada parallax — garis progres tetap jalan lewat `useScrollProgress` |
 | `reduced` | `prefers-reduced-motion: reduce` di perangkat yang memenuhi syarat di atas | Konten langsung terbaca, nol animasi |
 
 `readMotionMode()` memeriksa **perangkat dulu, baru preferensi gerak** — urutan itu disengaja.
@@ -352,9 +387,14 @@ benar di tingkat jaringan, bukan sekadar "tidak dieksekusi".
 - Emas `#D4AF37` / `#F6E7B4`, opacity 0.78, additive blending, size attenuation, DPR maks 2.
 - Rotasi kontinu Y 0.05 rad/detik; tilt ke mouse maks ±0.3 rad Y dan ±0.15 rad X, lerp
   0.05/frame. Ini **pengecualian infinite-loop resmi #1**.
-- Motif duduk di **87% lebar layar** (`MOTIF_CENTER_X`), sama dengan kotak fallback SVG
-  `DnaHelix` (`right: 4%`) supaya transisi rich → simple tidak terasa melompat. Nilainya
-  dihitung dari geometri kamera, jadi posisinya sama di aspect rasio berapa pun.
+- Motif duduk di **TENGAH layar** (`MOTIF_CENTER_X = 0.5`), sama dengan kotak fallback SVG
+  `DnaHelix` (wrapper flex `justify-center` di `Hero.tsx`) supaya transisi rich → simple
+  tidak terasa melompat. Dulu motifnya digeser ke kanan (`0.87`) mengikuti layout dua kolom
+  asimetris hero; di tengah ia jadi satu titik fokus yang seimbang dengan headline di kiri.
+  `.hero-scrim` karena itu ikut disederhanakan — blok `@media (min-width: 1280px)` yang
+  menggantinya jadi gradien linear "gelap di kiri" dihapus, dan tidak ada lagi satu pun
+  angka breakpoint CSS yang harus cocok dengan angka breakpoint di modul three.js.
+  Nilainya dihitung dari geometri kamera, jadi posisinya sama di aspect rasio berapa pun.
 - Berhenti **total** saat hero keluar `rootMargin: -20%`, dan saat tab disembunyikan.
 - Fallback wajib: pembuatan WebGL dibungkus `try/catch`; kalau ditolak, Hero merender
   `DnaHelix` SVG, tidak pernah kosong.
@@ -366,22 +406,48 @@ benar di tingkat jaringan, bukan sekadar "tidak dieksekusi".
 - **Pengecualian infinite-loop resmi #2.**
 - Satu `IntersectionObserver` `rootMargin: 20%`: context dialokasikan saat section mendekati
   viewport dan **dilepas penuh** saat menjauh — bukan sekadar dijeda, supaya tidak memegang
-  context WebGL nganggur sepanjang halaman di-scroll.
+  context WebGL nganggur sepanjang halaman di-scroll. Ada jeda 250 ms sebelum dilepas supaya
+  menggulir cepat tidak membangun dan membongkar scene berulang kali.
+- **Jarak kamera dihitung, bukan fixed.** Ini akar masalah "3D-nya hilang-hilang", dan tidak
+  ada kaitannya dengan scene mati. `PerspectiveCamera` memakai fov **vertikal**, jadi saat
+  kanvas lebih lebar daripada tingginya, bidang pandang ke arah x justru lebih sempit. Pada
+  nilai lama (fov 38, `z = 4.2`), setengah tinggi bidang pandang di `z = 0` hanya 1.446
+  sementara cincin terluar radiusnya 1.0 — diameternya **138%** dari tinggi kanvas, jadi
+  bagian atas **dan** bawah setiap cincin terpotong, di semua lebar layar. Yang tersisa cuma
+  dua busur tipis. Dan karena jumlah bagian yang terpotong ikut berubah-ubah mengikuti tinggi
+  section, objeknya terlihat bergantian muncul dan hilang. Sekarang jaraknya dihitung supaya
+  seluruh armillary muat di **kedua** sumbu (`FIT_RADIUS = 1.03`, `FIT_MARGIN = 1.18`,
+  `z = max(distForHeight, distForWidth)`), jadi kotak kanvas boleh lebar, tinggi, atau
+  persegi — hasilnya sama saja. Ada regresi yang mengukurnya di 1440/1280/1024.
+- **Kanvasnya ikut diganti setiap kali context dilepas.** `dispose()` memanggil
+  `renderer.forceContextLoss()`, dan itu **membunuh context itu untuk selamanya** di elemen
+  canvas yang sama — `getContext()` di elemen itu akan mengembalikan context mati. Scene baru
+  lalu berjalan normal, tanpa error dan tanpa warning, tapi tidak menggambar satu piksel pun.
+  Urutannya persis gejala yang dilaporkan: buka di atas → klik navbar "Aturan" (cincin
+  terlihat) → scroll lewat ke bawah (context dibunuh) → klik navbar "Aturan" lagi (scene
+  dibangun di canvas mati, cincin tidak akan pernah muncul lagi sampai reload). Karena itu
+  `key={generation}` pada elemen canvas: alokasi berikutnya selalu mendapat elemen dan
+  context baru yang masih hidup. Ada regresi yang mengetuk navbar "Aturan" dua kali.
+- Syarat `visibilitychange` yang tadinya terbalik (`else if (!paused)`) juga diperbaiki —
+  sebelumnya loop tidak pernah restart setelah tab kembali.
 
-> **Dua pengecualian itu saja.** Tidak ada loop permanen ketiga. Loop yang tidak perlu
-> (interpolasi cincin kursor) berhenti sendiri begitu menyatu, bukan berputar selama halaman
-> terbuka.
+> **Dua pengecualian itu saja.** Tidak ada loop permanen ketiga milik kita. Loop yang tidak
+> perlu (interpolasi cincin kursor) berhenti sendiri begitu menyatu, bukan berputar selama
+> halaman terbuka. Satu-satunya rAF yang tetap hidup di mode `rich` adalah milik ScrollTrigger
+> sendiri, dan itu biaya pihak ketiga yang didokumentasikan di
+> [Scroll lock](#scroll-lock-cara-ikut--scrolltrigger-dengan-pin).
 
 ---
 
 ## Sistem gerak
 
-Semua gerak lewat paket `motion`, CSS native, `three.js` (dua tempat), atau GSAP (satu
-tempat). Gerbangnya satu-satunya: `useMotionMode()` di `src/hooks/useMotionMode.ts`.
+Semua gerak lewat paket `motion`, CSS native, `three.js` (dua tempat), atau GSAP (clock smooth
+scroll + scroll lock). Gerbangnya satu-satunya: `useMotionMode()` di
+`src/hooks/useMotionMode.ts`.
 
 | Query | Arti |
 |---|---|
-| `MQ.rich` | pointer fine **dan** layar ≥1024px. **Satu-satunya tempat kursor, dua WebGL, parallax, dan smooth scroll boleh hidup** |
+| `MQ.rich` | pointer fine **dan** layar ≥1024px. **Satu-satunya tempat kursor, dua WebGL, parallax, smooth scroll, dan scroll lock boleh hidup** |
 | `MQ.motion` | Gerak diizinkan (bukan reduced-motion) — masih dipakai `Reveal` dan hover |
 
 `readMotionMode()` memeriksa **perangkat dulu, baru preferensi gerak**, lalu memetakan:
@@ -401,27 +467,28 @@ partikel sama sekali — yang tampil `DnaHelix` SVG diam.
 3. **Reveal saat scroll (IO)** — `.reveal-group`/`.reveal` disembunyikan di bawah fold dan
    diberi kelas `is-in-view` oleh IntersectionObserver; fade+up 24px, stagger 80ms per anak
    (CSS). Kelas hanya dipasang JS saat `MQ.motion` cocok; tanpa JS semuanya langsung terlihat.
-4. **Garis pembatas** — maska horizontal `scaleX: 0 → 1` (bukan scroll-linked) + garis
-   progres Cara Ikut `scaleX`/`scaleY` yang mengikuti scroll jendela
-   (`useScrollProgress`).
-5. **Parallax — tiga simbol matematika** (Σ, φ, f(x)) di Cara Ikut, laju 0.15/0.25/0.35
+4. **Garis pembatas** — maska horizontal `scaleX: 0 → 1` (bukan scroll-linked)
+5. **Scroll lock "Cara Ikut" (GSAP ScrollTrigger)** — halaman ditahan di section itu
+   sementara scroll vertikal mengisi garis progres ke kanan; lihat
+   [Scroll lock](#scroll-lock-cara-ikut--scrolltrigger-dengan-pin). **Hanya `rich`.**
+6. **Parallax — tiga simbol matematika** (Σ, φ, f(x)) di Cara Ikut, laju 0.15/0.25/0.35
    plus pergeseran horizontal untuk φ. Mekanismenya `useScroll` + `useTransform` dari
    `motion`, sama dengan parallax ambient hero (rentang scrollY `[0, 1200]`). Murni
    posisi scroll, bukan rotasi otomatis. HANYA `rich`.
-6. **Hover elegan** — spotlight kartu, `border`/`background` tombol dan daftar aturan
+7. **Hover elegan** — spotlight kartu, `border`/`background` tombol dan daftar aturan
    berpindah lembut (`transition`, `--ease-elegant`); semuanya di dalam
    `@media (hover: hover) and (pointer: fine)`.
-7. **Kursor kustom** — dot `#F6E7B4` 7px **memimpin**: `transform` diset langsung di
+8. **Kursor kustom** — dot `#F6E7B4` 7px **memimpin**: `transform` diset langsung di
    `pointermove`, tanpa delay dan tanpa rAF. Cincin `#D4AF37` 28px **mengejar** dengan
    lerp eksponensial (`1 − exp(−dt/τ)`, τ = 0.4s) di dalam rAF. Persis seperti filosofi
    lerp yang sama dipakai tilt partikel. Loop cincin **berhenti sendiri** begitu menyatu
    (jarak < 0.05px) dan dinyalakan lagi oleh `pointermove` berikutnya — jadi tidak ada loop
    permanen yang tidak diizinkan governance. Hover: cincin ~1.8x + terisi tipis.
-8. **Navbar** — transparan di atas → blur + solid + border emas setelah scroll (listener
+9. **Navbar** — transparan di atas → blur + solid + border emas setelah scroll (listener
    rAF dengan throttle waktu + `STALE_MS` yang pulih sendiri). Menu mobile = panel CSS +
    `role="dialog"`, body terkunci, Esc menutup.
-9. **Smooth scroll (GSAP)** — lihat bagian di bawah.
-10. **Dua WebGL** — partikel DNA di hero dan armillary di Aturan; lihat
+10. **Smooth scroll (GSAP)** — lihat bagian di bawah.
+11. **Dua WebGL** — partikel DNA di hero dan armillary di Aturan; lihat
     [Ornamen](#ornamen--nol-gambar-raster-webgl-hanya-di-dua-tempat).
 
 ### Smooth scroll — bukan `ScrollSmoother`
@@ -442,10 +509,94 @@ jauh lebih besar daripada manfaat smooth scroll-nya.
 
 GSAP sendiri di-`import()` **dinamis** dengan penampung `ticker` nullable. Impor statis
 menambah ~70 kB ke bundle utama yang dibayar semua pengunjung ponsel; setelah dipisah,
-bundle utama 400.61 kB dan chunk GSAP berdiri sendiri 70.43 kB. Pengaturan yang dipasang:
-`wheel` PASSIVE dengan guard `e.ctrlKey` (zoom browser tidak diambil alih), interpolasi
-berhenti saat `|scrollY − target|` di bawah 0.12px, dan scroll native tetap jadi acuan
-sehingga `useScrollProgress` serta ScrollTrigger tetap membaca posisi yang benar.
+bundle utama 403.69 kB dan chunk GSAP berdiri sendiri 70.43 kB.
+
+### Aturan satu-penulis, dan akar "halaman bergetar"
+
+Keluhan aslinya: *"saat gw scroll, halamannya bergetar ke atas bawah, kayak seret."* Itu bukan
+soal rasa `lerp`. Setelah diukur bingkai demi bingkai, penyebabnya dua hal yang saling
+menguatkan:
+
+1. **`wheel` dipasang PASSIVE.** Versi lama memasang listener secara `passive: true`, jadi
+   browser tetap menjalankan scroll NATIF-nya: tiap putaran wheel, posisi scroll meloncat
+   `deltaY` seketika, sementara ticker masih menarik dari `current` yang tertinggal di posisi
+   lama. Dua gerak berlawanan di satu sumbu, dan besar getarannya ikut bergantung pada timing
+   frame. Sekarang `wheel` non-passive dengan `preventDefault()` (dengan guard `e.ctrlKey`,
+   supaya zoom browser tidak ikut diambil alih), jadi tidak ada lagi penulis kedua di sumbu
+   itu.
+2. **`scroll-behavior: smooth` masih hidup.** CSS itu membuat setiap `window.scrollTo` per-frame
+   jadi animasi scroll milik browser sendiri, yang langsung dibatalkan bingkai berikutnya —
+   60x/detik. Sekarang dimatikan selama hook hidup lewat atribut
+   `html[data-smooth-scroll='on']`.
+
+Dua konsekuensi yang harus ikut dijaga kalau hook ini diubah:
+
+- **Echo scroll tidak boleh dianggap scroll luar.** Listener `scroll` lama membandingkan `y`
+  sekarang dengan `target` yang diukur di waktu BERBEDA, lalu salah membaca echo miliknya
+  sendiri sebagai "pengguna yang scroll dari luar", mematikan loop, yang lalu dinyalakan lagi
+  oleh `onWheel`. Hasilnya gerakan terputus-putus: bingkai diam, bingkai melompat, berulang.
+  Sekarang posisinya dibandingkan dengan `lastWritten` — angka yang benar-benar kita serahkan
+  ke browser — dengan toleransi 2px, dan tidak ada timer sama sekali.
+- **Langkah interpolasi harus dibatasi.** Tanpa batas, `deltaRatio` terakhir bisa jadi 8, artinya
+  57% sisa jarak tempfile selesai dalam satu bingkai. Sekarang dibatasi `MAX_STEP_FRAC = 0.35`
+  dari tinggi viewport dan rasio langkah `MAX_RATIO = 1.5`.
+
+Hasilnya, diukur pada probe yang sama sebelum dan sesudah: lompatan antar-bingkai terburuk
+**192px → 48px**, langkah satu bingkai **233px → 88px**, bingkai mundur **0**, dan bingkai beku
+**0** selama input aktif. Ada regresinya di `verify.mjs` (B17), dan probe scroll sengaja
+dibatasi 55% panjang scroll — mengukur sampai dasar dokumen melaporkan "jeda beku" yang
+seluruhnya artefak, karena di dasar halaman memang tidak ada jarak tersisa.
+
+Yang **tidak** diambil alih: scrollbar, keyboard (spasi/panah/PageUp/PageDown), find-in-page, dan
+scroll sentuh semuanya native. Anchor link ditangani sendiri di dalam hook, karena
+`scroll-behavior: smooth` sengaja dimatikan — tanpa itu, klik navbar akan melompat seketika.
+Jeda terhadap navbar tetap dipatuhi lewat `scroll-margin-top` yang dipasang tiap section, dan
+nilainya dibaca apa adanya supaya CSS tetap satu sumber kebenaran.
+
+### Scroll lock Cara Ikut — ScrollTrigger dengan `pin`
+
+*"Ketika scroll di section Cara Ikut, halaman akan terkunci di situ. Harus scroll terus sampai
+garisnya terisi penuh ke kanan, setelah itu baru bisa scroll ke bawah lagi."*
+
+**Kenapa ScrollTrigger, dan bukan `preventDefault()` manual.** Karena `useSmoothScroll` sudah
+menjadi SATU-PENULIS posisi scroll, handler wheel kedua di halaman yang sama berarti dua
+penulis pada satu sumbu — itu persis getarannya yang sudah diperbaiki. ScrollTrigger tidak
+menambah penulis baru: dia hanya **membaca** posisi scroll yang sudah native. Dan dua hal yang
+mustahil diberikan hooks manual dia berikan sendiri:
+
+- **Runway.** `pin: true` membungkus target dengan `pin-spacer` yang tingginya sama dengan
+  jarak scroll tambahan (`RUNWAY_SCREENS = 2`). Tanpa itu tidak ada jarak scroll yang bisa
+  dipakai untuk mengisi garis — section akan langsung lepas begitu wheel pertama dipakai.
+- **Pin yang benar.** `position: fixed` selama di-pin, dilepas tepat di `end`, dan dihitung
+  ulang saat resize. Ditulis tangan, detail seperti ini mudah salah tepat di ambang batas.
+
+**Kenapa `scrub: true` dan bukan angka desimal.** Ini bukan soal rasa, tapi soal syarat yang
+diminta. Pin dilepas pada `end`, yaitu pada satu posisi scroll TENTU. Kalau progress digerakkan
+`scrub: 0.4`, progress mengejar posisi scroll dengan peredaman, jadi di detik pin dilepas
+progress belum tentu 1 — dan syaratnya justru "setelah garisnya terisi penuh baru bisa scroll
+ke bawah". Probe `scrub: 0.4` melepaskan pin saat garis baru **0.77**. Dengan `scrub: true`
+progress = posisi scroll persis, dan posisi scroll sudah diinterpolasi oleh `useSmoothScroll`.
+
+**Dua jalur, bukan satu.** `HowToJoin` merender dua implementasi yang saling eksklusif:
+`LockedLine` (GSAP, mode `rich`) dan `ScrollDrivenLine` (`useScrollProgress`, mode lain) —
+identik secara visual. Mode `simple`/`reduced` tidak pernah mengunduh GSAP sama sekali.
+
+**Harga yang dibayar: satu rAF permanen.** `ScrollTrigger` menjalankan
+`requestAnimationFrame` sendiri selama halaman hidup, dan tidak ada API publik untuk
+menghentikannya (`disable()` tidak menyentuh flag ticker-nya). Dua sumbernya, keduanya tidak
+menggambar apa pun: ticker internal yang dinyalakan `enable()`, dan penjaga `scrollEnd` yang
+menyisakan satu bingkai terjadwal agar bisa mendeteksi bahwa scroll sudah berhenti — sekitar 2x
+per detik meski halaman diam total. Jadi di mode `rich` satu rAF per bingkai memang ada; yang
+tidak ada, dan itu yang diuji `verify.mjs`, adalah loop **gambar** milik kita: canvas hero dan
+armillary tetap berhenti total saat section-nya jauh. Di mode `simple`/`reduced` tidak ada rAF
+tambahan sama sekali.
+
+**Jebakan yang menyesatkan saat mengukurnya.** `pin: true` membungkus section dengan
+`<div class="pin-spacer">`, jadi section Cara Ikut turun satu tingkat dari `#top` dan selector
+`#top > section` berhenti melihatnya — blok pelapor ikut bilang "7 section, z 10..80" seolah
+section itu hilang, padahal isinya utuh. Penghitungan posisi harus memakai selector yang sama
+dengan blok yang menguji section. Dan probe scroll harus berkecepatan realistis (satu wheel per
+6 bingkai): robot yang menggulir satu putaran per bingkai memberi bacaan yang salah.
 
 ### Overlap antar-section — maksimal 2
 
@@ -486,7 +637,7 @@ Padding adaptif untuk section yang ter-pin diletakkan di `@layer utilities`, buk
 | Perdana | Kiri + garis vertikal emas 2px full-height kiri (`.accent-rule-l`) |
 | Cara Ikut | Header **tengah** (max ~40ch) + langkah grid |
 | Juri & Mitra | Kiri |
-| Aturan & Transparansi | Header **kanan** (`.section-head--right`, ~38ch) + daftar kiri |
+| Aturan & Transparansi | Header **kanan** (`.section-head--right`, ~38ch) + daftar kiri (65ch), armillary di kolom kanan baris yang sama |
 | FAQ | Kiri (dua kolom ≥1024px) |
 | CTA Penutup | Tengah |
 
@@ -511,7 +662,7 @@ gradasi tidak restart. Reduced-motion: teks langsung utuh, tanpa wrapper animasi
 Ketika cincin sudah di dalam 0.05px dari dot, loop-nya **berhenti** (`return` tanpa
 menjadwalkan frame berikutnya); `pointermove` berikutnya menyalakannya lagi. Versi pertama
 selalu menjadwalkan frame tanpa syarat, dan itu berarti rAF menyala terus selama halaman
-terbuka meskipun mouse diam — loop permanen ketiga yang tidak diizinkan governance. `B16`
+terbuka — loop permanen ketiga milik kita yang tidak diizinkan governance. `B16`
 menguji keduanya: loop aktif saat pointer bergerak, dan **nol** setelah menyatu.
 
 `html[data-cursor-visible]` / `data-cursor-hover` / `data-cursor-pressed` jadi satu-satunya
@@ -593,9 +744,9 @@ Mobile-first, dibuka dengan `sm` 640 · `md` 768 · `lg` 1024 · `xl` 1280.
 | Breakpoint | Yang berubah |
 |---|---|
 | <1024px, atau pointer coarse | Mode `simple`: tanpa three.js, tanpa GSAP, tanpa kursor, tanpa parallax, tanpa magnet |
-| ≥1024px + pointer fine | Mode `rich`: semua fitur aktif |
+| ≥1024px + pointer fine | Mode `rich`: semua fitur aktif, termasuk scroll lock Cara Ikut |
 | ≥1024px **dan** ≥720px | `tentang` + `perdana` di-pin sebagai kartu bertumpuk |
-| ≥1280px | Motif DNA bergeser ke kolom kanan (pusat di 87% lebar) + scrim jadi gradien linear |
+| ≥1280px | Armillary Aturan memakai lebar penuh kolom kanannya (kotak persegi, maks 380px) |
 | `orientation: landscape` + `max-height: 500px` | Hero tidak lagi memaksa tinggi layar, petunjuk scroll disembunyikan |
 
 Detail penting:
@@ -623,24 +774,26 @@ fokus dikembalikan ke tombol pemicu saat ditutup.
 |---|---|---|---|
 | `index.html` | 1.95 kB | 0.88 kB | ya |
 | `assets/index-*.css` | 37.42 kB | 8.38 kB | ya |
-| `assets/index-*.js` (bundle utama) | 400.71 kB | 126.55 kB | ya |
-| `assets/three.module-*.js` | 515.66 kB | 128.16 kB | **tidak** |
-| `assets/index-*.js` (chunk GSAP) | 70.43 kB | 27.57 kB | **tidak** |
-| `assets/dnaParticles-*.js` | 2.74 kB | 1.45 kB | **tidak** |
-| `assets/gyroscope-*.js` | 1.87 kB | 0.98 kB | **tidak** |
+| `assets/index-*.js` (bundle utama) | 403.69 kB | 128.05 kB | ya |
+| `assets/three.module-*.js` | 515.66 kB | 128.60 kB | **tidak** |
+| `assets/index-*.js` (chunk GSAP) | 70.43 kB | 27.68 kB | **tidak** |
+| `assets/ScrollTrigger-*.js` | 43.55 kB | 18.11 kB | **tidak** |
+| `assets/dnaParticles-*.js` | 2.71 kB | 1.43 kB | **tidak** |
+| `assets/gyroscope-*.js` | 2.06 kB | 1.06 kB | **tidak** |
 | `fonts/cormorant-garamond-latin-var.woff2` | 37.64 kB | — (sudah kompres) | ya |
 | `fonts/manrope-latin-var.woff2` | 24.84 kB | — (sudah kompres) | ya |
 
-Ada **empat** chunk async, semuanya `import()` dinamis dan semuanya hanya diminta di mode
-`rich`: `three.module` (dipakai bersama oleh kedua scene), `dnaParticles`, `gyroscope`, dan
-GSAP. Di HP, total `.js` yang diminta browser adalah **satu file**: `index-*.js`. Itu
+Ada **lima** chunk async, semuanya `import()` dinamis dan semuanya hanya diminta di mode
+`rich`: `three.module` (dipakai bersama oleh kedua scene), `dnaParticles`, `gyroscope`,
+`index-*` (GSAP inti, untuk `gsap.ticker`), dan `ScrollTrigger` (untuk scroll lock Cara Ikut).
+Di HP, total `.js` yang diminta browser adalah **satu file**: `index-*.js`. Itu
 dibuktikan oleh rekaman jaringan di `verify.mjs` B11, bukan dibaca dari DOM — DOM hanya bisa
 menunjukkan canvas tidak ada, yang tetap benar/skena kalau three.js ikut terpasang di bundle
 utama. Total transfer HP ±196 KiB; three.js saja 128 KiB gzip, jadi mustahil ikut masuk.
 
 GSAP diimpor dinamis dengan sengaja. Impor statis akan menambah ~70 kB ke bundle utama yang
-dibayar semua pengunjung ponsel; setelah dipisah, bundle utama 400.71 kB dan chunk GSAP
-berdiri sendiri 70.43 kB.
+dibayar semua pengunjung ponsel; setelah dipisah, bundle utama 403.69 kB dan chunk GSAP
+berdiri sendiri 70.43 kB + ScrollTrigger 43.55 kB.
 
 Kedua font latin variable di-host sendiri (total ~62 kB) dan di-`preload`, jadi tidak ada
 permintaan ke pihak ketiga sama sekali saat halaman dimuat.
@@ -704,27 +857,34 @@ Semua diukur terhadap **production build** (`npm run build` → `npm run preview
 
 Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 
-**`verify.mjs` — 131 cek lulus / 0 gagal** terhadap build yang sama. Ringkasan bagian:
+**`verify.mjs` — 167 cek lulus / 0 gagal** terhadap build yang sama. Ringkasan bagian:
 
 | Bagian | Yang dibuktikan |
 |---|---|
 | A1–A2 | Statis: three.js & GSAP hanya diimpor di dalam `src/three/`; `--color-gold-bronze: #a17c1b`; tanpa `--font-mono`/Space Mono/`.lenis`; tanpa animasi infinite; stack punya syarat mati di luar layar cukup besar **dan** dimatikan total di reduced-motion |
 | B1 | 8 section, z-index 10→80; **maksimal 2** yang di-pin (`tentang` + `perdana`), sisanya garis rambut; isi section ter-pin muat di viewport; `scroll-margin-top` 88px |
-| B2 | Headline terpecah 3 baris, teks utuh, "sains" gradien, ambient statis; **partikel benar-benar menggambar** — framebuffer dibaca in-page (lit > 2000, maxLuma > 100) dan pusat motif di **87.7%** lebar layar, jauh dari headline yang berakhir di 864/1440px |
+| B2 | Headline terpecah 3 baris, teks utuh, "sains" gradien, ambient statis; **partikel benar-benar menggambar** — framebuffer dibaca in-page (lit > 2000, maxLuma > 100) dan pusat motif di **50%** lebar backing store |
 | B3 | Semua reveal terpicu, nol elemen tertinggal opacity 0 |
-| B4 | Garis progres `scaleX` tumbuh mengikuti scroll |
+| B4 | Garis progres tumbuh mengikuti scroll (dua arsitektur: `.timeline-progress-fill` untuk jalur GSAP, `md:origin-left` untuk jalur non-rich) |
 | B5 | Parallax tiga simbol matematika (Σ, φ, f(x)) bergeser (≥1024px + fine) |
 | B6 | FAQ: item pertama terbuka, `inert` tepat, buka-tutup bergantian, tombol diklik & **tidak tertutup** section ter-pin |
 | B7 | Navbar transparan → blur + solid + border emas |
 | B8 | Dot memimpin (langsung di `pointermove`), cincin mengejar, cincin berpusat; hover membesar |
 | B9 | Magnet mendekat & kembali; `--mx/--my` spotlight; keduanya `hover:fine` saja |
 | B10 | Menu tersembunyi di desktop; tanpa scroll horizontal 1440px |
-| B11 | Mobile: **rekam jaringan** → hanya 1 file `.js` (bundle utama), nol chunk three.js & GSAP; canvas 3D tidak dibuat; hanya 2 section overlap `-28px`; kursor/magnet mati; menu `dialog`, Esc menutup |
+| B11 | Mobile: **rekam jaringan** → hanya 1 file `.js` (bundle utama), nol chunk three.js & GSAP; canvas 3D tidak dibuat; hanya 2 section overlap `-28px`; scroll lock tidak dipasang; kursor/magnet mati; menu `dialog`, Esc menutup |
 | B12 | Reduced motion: canvas 3D tidak dibuat, ambient tetap ada, relative, tanpa radius/bayangan, teks langsung terbaca, dan **0 animasi CSS berjalan di seluruh halaman** (`document.getAnimations()`) |
 | B13 | Sweep 320/375/768/1024/1440: tanpa scroll horizontal, FAQ klikable |
 | B14 | **0 exception, 0 `console.error`** |
-| B15 | FPS hero **60.3**, FPS giroskop **60.0**; kedua canvas tidak pernah hidup bersamaan (jarak 3071px); **render loop 0 callback** saat semua section 3D jauh, hidup lagi (60.1) setelah kembali ke atas |
-| B16 | Interpolasi cincin kursor **aktif** saat pointer bergerak (60 fps) dan **0 callback** setelah menyatu |
+| B15 | FPS hero **~124**, FPS giroskop **~124**; kedua canvas tidak pernah hidup bersamaan; **render loop 0 callback** saat semua section 3D jauh, hidup lagi setelah kembali ke atas; rAF yang tersisa saat idle **milik ScrollTrigger** (nama fungsi dibaca dari chunk build yang sama) |
+| B16 | Interpolasi cincin kursor **aktif** saat pointer bergerak dan **0 callback** setelah menyatu |
+| B17 | Scroll: **nol bingkai mundur**, nol bingkai beku >12, lompatan antar-bingkai jauh lebih kecil daripada langkah terjauh, satu bingkai tak melebihi 35% tinggi viewport. Scroll lock: `pin` benar di `top: 0`, runway terpakai **1705px dari 1800px**, garis **penuh (isi=1) tepat saat dilepas**, monotonik, keempat node menyala, halaman tidak beku, dan anchor navbar yang melewati section terkunci tetap mendarat di posisinya |
+
+Tambahan geometri armillary, diuji terpisah di 1440 / 1280 / 1024: seluruh cincin muat di
+kotak kanvas (ruang tepi 24px pada 318×318, 18px pada 238×238), cincin tidak menutupi daftar
+aturan (x=966–1203 vs teks 192–866 di 1440), tidak menutupi header (y=339–608 vs 24–267),
+tetap menggambar setelah keluar-masuk section, dan tetap menggambar setelah navbar "Aturan"
+diklik dua kali.
 
 **`verify-webgl-off.mjs` — 7 cek lulus / 0 gagal** dengan Chrome dijalankan
 `--disable-3d-apis`:
@@ -783,15 +943,20 @@ sendiri terlalu bising di mesin ini untuk menyimpulkan apa pun:
 
 | Skenario | Hasil terukur |
 |---|---|
-| Partikel hero aktif, 1440×900 | 60.3 fps |
-| Giroskop Aturan aktif, 1440×900 | 60.0 fps |
-| Kedua scene hidup bersamaan | **tidak pernah terjadi** — jaraknya 3071px, rentang tumpang-tindih −2711px |
-| Semua section 3D jauh dari viewport | **0 callback rAF** (loop benar-benar berhenti) |
-| Kembali ke atas | 60.1 fps (loop hidup lagi) |
+| Partikel hero aktif, 1440×900 | ~124 fps (nol frame dibuang) |
+| Giroskop Aturan aktif, 1440×900 | ~124 fps |
+| Kedua scene hidup bersamaan | **tidak pernah terjadi** — jaraknya 5266px, rentang tumpang-tindih −4906px |
+| Armillary setelah keluar-masuk section | tetap menggambar, ~6134 piksel menyala tiap re-entry |
+| Armillary setelah navbar "Aturan" diklik 2x | tetap menggambar (kanvas baru setiap context dilepas) |
+| Semua section 3D jauh dari viewport | **0 callback rAF** (loop gambar benar-benar berhenti) |
+| Sisa rAF saat halaman diam | milik ScrollTrigger (ticker + penjaga `scrollEnd`), ~55–70/s |
+| Kembali ke atas | loop hidup lagi |
 
-Keduanya mengikat frame 60 fps penuh di headless, jadi tidak ada satu pun yang memakai
-buang frame. Dan tidak ada lagi loop rAF permanen ketiga: interpolasi cincin kursor juga
-diukur (aktif saat bergerak, 0 setelah menyatu).
+Keduanya mengikat frame penuh di headless, jadi tidak ada satu pun yang memakai buang frame.
+Dan tidak ada loop rAF permanen ketiga milik kita: interpolasi cincin kursor juga diukur
+(aktif saat bergerak, 0 setelah menyatu). Satu-satunya rAF yang bertahan saat idle adalah milik
+ScrollTrigger, dan itu tidak bisa dimatikan — lihat
+[Scroll lock](#scroll-lock-cara-ikut--scrolltrigger-dengan-pin).
 
 **Yang dicoba lalu dikembalikan:**
 
@@ -869,9 +1034,15 @@ ikut salah. Trade-off metric-versus-kebenaran itu tidak diambil.
 9. **`ScrollSmoother` GSAP sengaja tidak dipakai.** Ia membungkus konten lalu memberi
    `transform: translate3d` ke wrapper, dan konten di dalam elemen ber-transform kehilangan
    `position: sticky` — yang seluruh sistem overlap section ini bergantung padanya. Alasan
-   lengkap di [Smooth scroll](#smooth-scroll--bukan-scrollsmoother).
-10. **Dua pengecualian infinite-loop resmi**, dan hanya dua: rotasi partikel DNA di hero
-    (0.05 rad/detik) dan giroskop armillary di Aturan. Keduanya hanya di mode `rich`, keduanya
-    punya jalur berhenti (IO + `visibilitychange`), dan keduanya punya fallback saat WebGL
-    ditolak. Tidak ada pengecualian ketiga: cincin kursor, tilt partikel, dan smooth scroll
-    semuanya berhenti sendiri saat tidak ada yang berubah.
+   lengkap di [Smooth scroll](#smooth-scroll--bukan-scrollsmoother). **`ScrollTrigger` tetap
+   dipakai**, tapi hanya untuk `pin` di satu section, dengan alasan terpisah di
+   [Scroll lock](#scroll-lock-cara-ikut--scrolltrigger-dengan-pin).
+10. **Dua pengecualian infinite-loop resmi milik kita**, dan hanya dua: rotasi partikel DNA
+    di hero (0.05 rad/detik) dan giroskop armillary di Aturan. Keduanya hanya di mode `rich`,
+    keduanya punya jalur berhenti (IO + `visibilitychange`), dan keduanya punya fallback saat
+    WebGL ditolak. Tidak ada pengecualian ketiga: cincin kursor, tilt partikel, dan smooth
+    scroll semuanya berhenti sendiri saat tidak ada yang berubah. Scroll lock Cara Ikut
+    **tidak** menambah loop gambar — dia cuma membaca posisi scroll. Satu-satunya rAF yang
+    tetap hidup di mode `rich` adalah milik ScrollTrigger sendiri, tidak punya API untuk
+    dimatikan, dan biayanya dihitung di
+    [Scroll lock](#scroll-lock-cara-ikut--scrolltrigger-dengan-pin).

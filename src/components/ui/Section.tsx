@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { forwardRef, type ReactNode } from 'react';
 
 type SectionProps = {
   id: string;
@@ -65,44 +65,55 @@ type SectionProps = {
  * prefers-reduced-motion: seluruh mekanisme dimatikan di CSS — section
  * tersusun berurutan biasa, tanpa radius/bayangan/overlap.
  */
-export function Section({
-  id,
-  z,
-  children,
-  stack = false,
-  card = true,
-  className = '',
-  decor,
-  innerClassName = 'py-18 md:py-24 lg:py-30',
-  width = 'default',
-}: SectionProps) {
-  const shellMax = {
-    default: '1120px',
-    wide: '1240px',
-    narrow: '820px',
-  }[width];
+const Section = forwardRef<HTMLElement, SectionProps>(
+  (
+    {
+      id,
+      z,
+      children,
+      stack = false,
+      card = true,
+      className = '',
+      decor,
+      innerClassName = 'py-18 md:py-24 lg:py-30',
+      width = 'default',
+    },
+    ref
+  ) => {
+    const shellMax = {
+      default: '1120px',
+      wide: '1240px',
+      narrow: '820px',
+    }[width];
 
-  const classes = ['stack-wrap'];
-  if (stack) {
-    classes.push('stack-wrap--stack');
-    if (card) classes.push('stack-wrap--card');
-  } else {
-    classes.push('stack-wrap--rule');
+    const classes = ['stack-wrap'];
+    if (stack) {
+      classes.push('stack-wrap--stack');
+      if (card) classes.push('stack-wrap--card');
+    } else {
+      classes.push('stack-wrap--rule');
+    }
+
+    return (
+      <section
+        ref={ref}
+        id={id}
+        className={`${classes.join(' ')} ${className}`}
+        style={{ zIndex: z, scrollMarginTop: '88px' }}
+      >
+        {/* Dekorasi ditulis SEBELUM isi dan tanpa z-index, jadi selalu di bawah
+            konten. `overflow-hidden` di section ini yang menjaga canvas tidak
+            bocor ke section tetangga saat bergulir. */}
+        {decor}
+        <div className={`shell relative ${innerClassName}`} style={{ ['--shell-max' as string]: shellMax }}>
+          {children}
+        </div>
+      </section>
+    );
   }
+);
 
-  return (
-    <section
-      id={id}
-      className={`${classes.join(' ')} ${className}`}
-      style={{ zIndex: z, scrollMarginTop: '88px' }}
-    >
-      {/* Dekorasi ditulis SEBELUM isi dan tanpa z-index, jadi selalu di bawah
-          konten. `overflow-hidden` di section ini yang menjaga canvas tidak
-          bocor ke section tetangga saat bergulir. */}
-      {decor}
-      <div className={`shell relative ${innerClassName}`} style={{ ['--shell-max' as string]: shellMax }}>
-        {children}
-      </div>
-    </section>
-  );
-}
+Section.displayName = 'Section';
+
+export { Section };
+export type { SectionProps };

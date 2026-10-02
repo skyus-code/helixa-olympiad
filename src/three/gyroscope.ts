@@ -32,6 +32,24 @@ export interface GyroHandle {
 const DPR_MAX = 2;
 const OPACITY = 0.55; // 0.5-0.6: tidak boleh mengalahkan teks aturan
 
+/**
+ * Radius paket armillary, dipakai untuk fitting kamera.
+ *
+ * Cincin terluar (RINGS[0].radius) tepat 1.0, dan `TorusGeometry` dengan
+ * `tubularSegments`/`radialSegments` membuat polygon's edge sedikit di luar
+ * radius ideal - pinggiran kecil ini menutup selisihnya.
+ */
+const FIT_RADIUS = 1.03;
+
+/**
+ * Ruang kosong di sekeliling armillary, sebagai fraksi dari FIT_RADIUS.
+ *
+ * 1.0 berarti pas menyentuh tepi. Di sinilah objek ini pernah "hilang-hilang":
+ * pada nilai 1.0, cincin menyinggung tepi kanvas dan terpotong sedikit, jadi
+ * yang terlihat hanya dua busur tipis - persis gejala yang dilaporkan.
+ */
+const FIT_MARGIN = 1.18;
+
 /** Emas khusus wireframe, sedikit lebih hangat dari emas UI. */
 const GOLD = new THREE.Color('#D4AF37');
 const GOLD_BRIGHT = new THREE.Color('#F6E7B4');
@@ -101,7 +119,39 @@ export function createGyroScene(
     const h = canvas.clientHeight || canvas.parentElement?.clientHeight || 1;
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, DPR_MAX));
     renderer.setSize(w, h, false);
-    camera.aspect = w / Math.max(1, h);
+
+    const aspect = w / Math.max(1, h);
+    camera.aspect = aspect;
+
+    /*
+     * JARAK KAMERA DIHITUNG, BUKAN FIXED.
+     *
+     * Versi sebelumnya menaruh kamera di z = 4.2 lalu hanya membiarkan aspect
+     * mengikuti kotak kanvas. Dua-duanya salah untuk tujuan yang sama:
+     *
+     *   - `PerspectiveCamera` memakai fov VERTIKAL, jadi saat kanvas lebih lebar
+     *     daripada tingginya, bidang pandang ke arah x justru lebih sempit.
+     *   - Pada fov 38 dan z = 4.2, setengah tinggi bidang pandang di z = 0 hanya
+     *     1.446, sedangkan cincin terluar radiusnya 1.0. Diameternya jadi 138%
+     *     dari tinggi kanvas, jadi bagian atas DAN bawah setiap cincin
+     *     terpotong - di SEMUA lebar layar.
+     *
+     * Yang tersisa tinggal dua busur tipis. Dan karena banyaknya bagian yang
+     * terpotong ikut berubah-ubah mengikuti tinggi section, objeknya terlihat
+     * "kadang muncul kadang hilang" - bukan karena scene mati, tapi karena
+     * sebagian besarnya ada di luar kanvas.
+     *
+     * Di sini jaraknya dipilih supaya seluruh armillary muat di KEDUA sumbu,
+     * dengan ruang kosong FIT_MARGIN. Kanvas boleh lebar, tinggi, atau persegi;
+     * hasilnya sama saja: cincin utuh, di tengah.
+     */
+    const halfFovV = (camera.fov * Math.PI) / 360;
+    const need = FIT_RADIUS * FIT_MARGIN;
+    const distForHeight = need / Math.tan(halfFovV);
+    const halfFovH = Math.atan(Math.tan(halfFovV) * aspect);
+    const distForWidth = need / Math.tan(halfFovH);
+    camera.position.set(0, 0, Math.max(distForHeight, distForWidth));
+    camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
   }
 
@@ -131,13 +181,22 @@ export function createGyroScene(
     raf = requestAnimationFrame(frame);
   }
 
+  // Jeda saat tab disembunyikan, lanjut lagi saat kembali.
+  //
+  // Syarat di cabang `else` pernah terbalik (`!paused`), sehingga handler ini
+  // tidak pernah menyalakan loop lagi setelah tab disembunyikan. Gejalanya
+  // tidak terlihat karena GyroCanvas memanggil setPaused(false) dari listener
+  // visibilitychange-nya sendiri, tapi begitu listener itu dihapus, masuk
+  // kembali ke section tidak akan memulai putaran sama sekali.
   const onVis = () => {
     if (disposed) return;
     if (document.hidden) {
+      if (paused) return;
       paused = true;
       cancelAnimationFrame(raf);
       raf = 0;
-    } else if (!paused) {
+    } else if (paused) {
+      paused = false;
       raf = requestAnimationFrame(frame);
     }
   };

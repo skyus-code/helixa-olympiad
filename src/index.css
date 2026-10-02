@@ -105,6 +105,24 @@
     overflow-x: clip;
   }
 
+  /*
+   * Smooth scroll JS sedang memegang posisi scroll selama mode 'rich'
+   * (hooks/useSmoothScroll). Atribut ini dipasang hook itu hanya selama ia
+   * hidup.
+   *
+   * `scroll-behavior: smooth` DIWAJIBKAN mati di sini. Kalau tidak, setiap
+   * `window.scrollTo` per-frame yang ditulis ticker menjadi animasi scroll
+   * milik browser sendiri, yang langsung dibatalkan tick berikutnya - 60x per
+   * detik. Hasilnya halaman bergetar ke atas-bawah, persis seperti yang
+   * terjadi sebelum aturan ini ada.
+   *
+   * Selektor atribut (0,1,1) mengalahkan `html` polos (0,0,1) di layer yang
+   * sama, jadi blok base ini sendiri sudah cukup tanpa `!important`.
+   */
+  html[data-smooth-scroll='on'] {
+    scroll-behavior: auto;
+  }
+
   body {
     background-color: var(--color-ink);
     color: var(--color-bone);
@@ -491,66 +509,65 @@
 
   /* ---- Hero scrim --------------------------------------------------------- */
   /*
-   * Lapisan gelap antara objek 3D dan konten. Bentuknya berubah menurut lebar.
+   * Lapisan gelap antara objek 3D dan konten, tiga lapis dari belakang:
+   *   1. vignette elips simetris - meredupkan tepi layar, supaya objek 3D di
+   *      tengah tidak pernah terlihat seperti ditempel di tepi;
+   *   2. peneduh sisi kiri - headline ada di kiri, jadi sisi itu butuh
+   *      tambahan tinta sekarang objek 3D-nya di TENGAH (lihat
+   *      MOTIF_CENTER_X di three/dnaParticles.ts dan `justify-center` di
+   *      komponen Hero);
+   *   3. peneduh tepi atas - meredupkan navbar yang masih transparan.
    *
-   *  - Di bawah 1280px objek 3D berada di tengah layar (lihat WIDE_AT di
-   *    three/helixScene.ts), jadi scrim cukup berupa vignette simetris plus
-   *    peneduh tepi atas.
-   *  - Di 1280px ke atas objek digeser ke kanan, dan sisi kiri berubah jadi satu
-   *    gradient linear yang gelap di belakang headline lalu memudar ke kanan.
-   *    Bentuk elips tidak bisa dipakai di sini: di sisi kanan ia justru
-   *    bergantung ke gelap, dan objek yang justru paling terang di kanan.
+   * Bentuk elips TIDAK bisa dipakai untuk sisi kiri: di sisi kanan ia justru
+   * bergantung ke gelap, padahal di sanalah objeknya paling terang. Karena
+   * itu sisi kiri memakai linear gradient, sisi tepi memakai elips.
    *
-   * 1280px WAJIB sama dengan WIDE_AT di three/helixScene.ts. Kalau keduanya
-   * tidak sepakat soal kapan objek bergeser, salah satu akibatnya: teks
-   * tertutup objek, atau objek menggantung sendirian di ruang kosong.
-   *
-   * Ditulis di CSS, bukan sebagai arbitrary value Tailwind, karena isinya
-   * beberapa warna dalam dua lapis per breakpoint — utility class akan jadi
-   * tidak terbaca.
+   * Tidak ada blok 1280px lagi. Saat motif bergeser ke kanan, scrim memang
+   * harus berubah bentuk; setelah motif dipusatkan, satu bentuk sudah benar
+   * di semua lebar, dan tidak ada lagi angka breakpoint yang harus cocok
+   * dengan angka breakpoint di modul three.js.
    */
   .hero-scrim {
     background:
+      linear-gradient(
+        100deg,
+        rgba(10, 10, 11, 0.86) 0%,
+        rgba(10, 10, 11, 0.66) 30%,
+        rgba(10, 10, 11, 0.3) 56%,
+        rgba(10, 10, 11, 0) 76%
+      ),
       linear-gradient(180deg, rgba(10, 10, 11, 0.5) 0%, rgba(10, 10, 11, 0) 20%),
       radial-gradient(
         ellipse 78% 68% at 50% 46%,
         transparent 0%,
-        rgba(10, 10, 11, 0.45) 72%,
+        rgba(10, 10, 11, 0.4) 74%,
         rgba(10, 10, 11, 0.85) 100%
       );
   }
 
-  @media (min-width: 1280px) {
-    .hero-scrim {
-      background:
-        linear-gradient(
-          100deg,
-          rgba(10, 10, 11, 0.94) 0%,
-          rgba(10, 10, 11, 0.9) 38%,
-          rgba(10, 10, 11, 0.62) 58%,
-          rgba(10, 10, 11, 0.22) 76%,
-          rgba(10, 10, 11, 0) 92%
-        ),
-        linear-gradient(180deg, rgba(10, 10, 11, 0.5) 0%, rgba(10, 10, 11, 0) 20%);
-    }
-  }
-
   /* ---- Giroskop armillary (section Aturan) ------------------------------- */
-  /* Ditaruh di sisi kanan karena daftar aturan mengisi sisi kiri. Lebarnya
-     dibatasi supaya cincin tidak pernah masuk ke area teks, dan opacity
-     diturunkan lewat kelas .rules-gyro supaya garis emas tidak mengalahkan
-     ketebalan tipografi. */
+  /*
+   * Hanya dua hal yang diatur di sini, dan keduanya disengaja:
+   *
+   *  - `opacity`: cincin emas harus kalah oleh ketebalan tipografi aturan.
+   *  - `contain`: layout+paint membuat browser tahu area ini tidak memengaruhi
+   *    layout di sekitarnya dan tidak perlu melacak apa pun yang keluar dari
+   *    kotak kanvas. `size` sengaja tidak dipakai: contain:size menghitung
+   *    elemen seolah isinya kosong, padahal ukuran kotak ini ikut menentukan
+   *    tinggi kolom kanan tempat armillary duduk.
+   *
+   * Posisi dan ukuran kotaknya TIDAK di sini. Kotaknya ada di
+   * components/RulesTransparency.tsx sebagai elemen flow dengan aspect 1:1 di
+   * dalam kolom kanan section, lalu GyroCanvas mengisi kotak itu dengan
+   * `absolute inset-0`. Alasannya cascade: `absolute inset-0` yang ditulis
+   * GyroCanvas adalah utility Tailwind, dan utility selalu mengalahkan
+   * `@layer components` berapa pun spesifisitasnya. Aturan `left: 50%` yang
+   * pernah ada di blok ini karena itu sama sekali tidak pernah berlaku, dan
+   * kanvas pernah melebar penuh melebihi kolom teks.
+   */
   .rules-gyro {
     opacity: 0.62;
-    contain: strict;
-  }
-
-  @media (min-width: 768px) {
-    .rules-gyro {
-      /* Isi canvas diposisikan ke separuh kanan section lewat offset kiri 50%,
-         sementara wrapper-nya tetap inset-0. Jadi biaya layout-nya nol. */
-      left: 50%;
-    }
+    contain: layout paint;
   }
 
   /* ---- Heliks DNA SVG (fallback mode simple/reduced) ---------------------- */
@@ -564,8 +581,12 @@
          melompat ke tempat lain;
        - di bawah 768px ornamen ini sepenuhnya disembunyikan. Di layar
          sekecil itu helix hanya jadi kabut di belakang teks, dan yang
-         TERLIHAT ke user justru headline-nya. Biayanya nyata,/manfaatnya
-         tidak. */
+         terlihat ke user justru headline-nya. Biayanya nyata, manfaatnya
+         tidak.
+
+     Tidak ada offset horizontal di sini. Motif DNA sekarang dipusatkan, jadi
+     wrapper flex di komponen Hero yang menengahkan; fallback dan partikel
+     three.js karena itu berhenti di tempat yang sama. */
   .hero-dna-helix {
     height: min(58vh, 420px);
     width: auto;
@@ -575,14 +596,6 @@
   @media (min-width: 768px) {
     .hero-dna-helix {
       height: min(72vh, 560px);
-    }
-  }
-
-  @media (min-width: 1280px) {
-    .hero-dna-helix {
-      /* Geser ke kanan sesuai slot dua kolom, sama seperti yang dilakukan
-         kamera partikel (camera.position.x = 1.15 di dnaParticles.ts). */
-      right: 4%;
     }
   }
 
@@ -765,6 +778,43 @@
   /* Tekan: cincin memampat (scale pada core, anchor tetap di tengah) */
   html[data-cursor-pressed='true'] .cursor-ring__core {
     transform: scale(0.85);
+  }
+
+  /* ---- Garis progres Cara Ikut (diisi GSAP ScrollTrigger) ---------------- */
+  /*
+   * Garisnya adalah anak dari track 1px di markup HowToJoin. Yang ditulis GSAP
+   * hanya `transform: scaleX()`, jadi `will-change` di sini yang membuat
+   * compositor yang mengubahnya, bukan layout.
+   */
+  .timeline-progress-fill {
+    transform-origin: left center;
+    will-change: transform;
+  }
+
+  /*
+   * State lingkaran nomor. Kelas `is-done` / `is-current` dipasang oleh hook
+   * scroll lock sesuai posisi garis progres, bukan oleh React, supaya tidak
+   * ada re-render yang masuk di tengah gerakan scroll.
+   */
+  .step-node {
+    transition:
+      border-color 0.35s var(--ease-elegant),
+      background-color 0.35s var(--ease-elegant),
+      box-shadow 0.35s var(--ease-elegant),
+      color 0.35s var(--ease-elegant);
+  }
+
+  .step-node.is-done {
+    border-color: var(--color-gold);
+    background-color: rgba(212, 175, 55, 0.16);
+    color: var(--color-gold);
+  }
+
+  .step-node.is-current {
+    border-color: var(--color-gold);
+    background-color: var(--color-ink);
+    color: var(--color-gold);
+    box-shadow: 0 0 20px rgba(212, 175, 55, 0.45);
   }
 }
 

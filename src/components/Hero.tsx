@@ -5,10 +5,14 @@
  *   1. .hero-ambient  - glow radial (CSS murni), statis; parallax datang dari
  *      transform yang ditulis paket `motion` saat scroll.
  *   2. Motif DNA     - dua slot yang SALING MENGGANTIKAN, tidak pernah tampil
- *      bersamaan:
+ *        bersamaan:
  *        a. HeroParticles - pusaran partikel emas (three.js). Hanya mode 'rich'.
  *        b. DnaHelix SVG  - fallback ringan. Dipakai di mode 'simple'/'reduced',
  *           dan juga di mode 'rich' kalau WebGL ditolak.
+ *      Dua slot itu menumpuk di TENGAH layar pada semua mode, karena itu juga
+ *      tempat kamera partikel membiarkan motifnya (MOTIF_CENTER_X di
+ *      three/dnaParticles.ts). Kalau salah satu slot bergeser, perpindahan mode
+ *      terlihat melompat.
  *   3. .hero-scrim    - gelapkan sisi teks dan tepi layar.
  *   4. konten        - eyebrow, headline kinetic, subteks, dua CTA, scroll hint.
  *
@@ -118,7 +122,7 @@ export function Hero() {
       {showSvgHelix && (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute inset-0 flex items-center justify-end overflow-hidden"
+          className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden"
         >
           <DnaHelix className="hero-dna-helix pointer-events-none absolute top-1/2 -translate-y-1/2" />
         </div>

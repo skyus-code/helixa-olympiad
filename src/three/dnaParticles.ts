@@ -61,14 +61,22 @@ const TILT_DAMP = 0.05;
 const DPR_MAX = 2;
 
 /**
- * Posisi pusat motif di layar, sebagai fraksi lebar viewport (0.87 = 87%).
+ * Posisi pusat motif di layar, sebagai fraksi lebar viewport (0.5 = tengah).
  *
- * Disesuaikan dengan kotak fallback SVG DnaHelix yang memakai `right: 4%`
- * (pusatnya di sekitar 87% lebar layar). Menaikkannya supaya perpindahan dari
- * mode rich ke mode simple - atau ke fallback saat WebGL ditolak - tidak terasa
- * melompat: motif muncul di tempat yang sama, hanya bedarenderer.
+ * Motif sengaja DI TENGAH, bukan digeser ke kanan seperti semula: di sisi
+ * kanan ia terlihat menggantung di ruang kosong, sedangkan di tengah ia
+ * menjadi satu titik fokus yang seimbang dengan headline di kiri.
+ *
+ * Dua konsekuensi yang harus ikut dijaga kalau angka ini diubah lagi:
+ *
+ *  1. Kotak fallback SVG DnaHelix harus di posisi yang sama. Yang menengahkan
+ *     fallback adalah wrapper flex di komponen Hero; kalau salah satu dari dua
+ *     slot itu bergeser, perpindahan mode terlihat melompat.
+ *  2. `.hero-scrim` di index.css tidak boleh memakai gradient asimetris
+ *     "gelap di kiri, terang di kanan" - motif yang paling terang harusnya
+ *     tidak berada di bagian paling gelap.
  */
-const MOTIF_CENTER_X = 0.87;
+const MOTIF_CENTER_X = 0.5;
 
 /**
  * Sprite radial 64x64 di-prerender sekali, dipakai sebagai texture point.
@@ -195,32 +203,25 @@ export function createDnaScene(
     renderer.setSize(w, h, false);
     camera.aspect = w / Math.max(1, h);
     /*
-     * Pada layar lebar, geser motif ke KANAN mengikuti layout dua kolom
-     * asimetris hero, supaya tidak menimpa headline di kiri.
+     * Motif digeser ke `MOTIF_CENTER_X` dari lebar layar. Hitungannya memakai
+     * geometri kamera, bukan angka tetap, supaya posisinya di layar sama persis
+     * pada aspect rasio berapa pun.
      *
-     * Tanda minusnya penting, dan dulu terbalik. Kamera diarahkan ke (0,0,0)
-     * saat posisi x-nya masih nol, jadi sumbu pandangnya tegak lurus ke -Z.
-     * Kalau kamera lalu digeser ke x positif, titik asal (0,0,0) berada di
-     * sebelah KIRI bidang pandang danmotif justru muncul di kiri - persis
-     * kebalikan dari yang diinginkan, dan tepat di bagian paling pekat dari
-     * hero-scrim. Akibatnya partikel tenggelam di bawah lapisan tinta dan
-     * nyaris tidak terlihat, padahal scene-nya berjalan normal.
+     * TANDANYA PENTING: kamera selalu diarahkan ke (0, 0, 0) sejak scene
+     * dibuat, jadi sumbu pandangnya tegak lurus ke -Z. Menggeser kamera ke x
+     * POSITIF membuat titik asal jatuh di sebelah KIRI bidang pandang, dan
+     * motif justru muncul di kiri - persis kebalikan dari maksud "geser ke
+     * kanan". Karena itu selisihnya yang dikurangi, bukan ditambahkan. (Dulu
+     * tanda ini terbalik, dan motif tenggelam di bagian paling pekat dari
+     * hero-scrim tanpa error apa pun yang terlihat di console.)
      *
-     * Offset dihitung dari geometri kamera, bukan angka tetap, supaya posisinya
-     * di layar sama persis pada aspect rasio berapa pun. `HALF_W` adalah
-     * setengah lebar bidang pandang di bidang z=0; menggeser kamera sepanjang
-     * 2 * HALF_W akan menggeser isi layar sepanjang 1.0 (yaitu 100%).
+     * `halfW` adalah setengah lebar bidang pandang di bidang z=0: menggeser
+     * kamera sepanjang 2 * halfW akan menggeser isi layar sepanjang 1.0,
+     * yaitu 100%. Dengan MOTIF_CENTER_X = 0.5, hasilnya nol.
      */
-    if (w >= 1024) {
-      const halfW =
-        Math.tan((camera.fov * Math.PI) / 360) * camera.position.z * camera.aspect;
-      // MOTIF_CENTER_X = 0.87: pusat motif di 87% lebar layar, sama dengan
-      // kotak fallback SVG DnaHelix (right: 4%), supaya transisi rich -> simple
-      // tidak terasa melompat.
-      camera.position.x = (0.5 - MOTIF_CENTER_X) * 2 * halfW;
-    } else {
-      camera.position.x = 0;
-    }
+    const halfW =
+      Math.tan((camera.fov * Math.PI) / 360) * camera.position.z * camera.aspect;
+    camera.position.x = (0.5 - MOTIF_CENTER_X) * 2 * halfW;
     camera.updateProjectionMatrix();
   }
 
