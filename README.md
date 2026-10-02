@@ -121,6 +121,12 @@ berubah, interaksi yang benar-benar berfungsi.
     garis **penuh tepat saat halaman dilepas**, tidak pernah mundur, keempat node menyala,
     halaman tidak beku saat terkunci, dan anchor navbar yang melewati section terkunci
     tetap mendarat di posisinya
+18. **Armillary tengah & seukuran Hero** — geser dari pusat section ≤4% lebar viewport di
+    1440/1280/1024, luas extent 104%/105%/99% dari motif hero, seluruh cincin muat di
+    kotaknya (ruang tepi 45px), dan rasio kontras WCAG terburuk dari **empat** blok
+    teks di depannya **4.83:1** — di atas ambang AA, meski cincin melintas di
+    belakang paragraf. Diuji pada 300 bingkai, karena puncak alpha cincin hanya
+    bisa dijumpai di fase rotasi tertentu
 
 ### Jebakan pengukuran yang sudah ditangani
 
@@ -215,6 +221,45 @@ berubah, interaksi yang benar-benar berfungsi.
     sampai dasar dokumen melaporkan "jeda beku 44 bingkai" yang seluruhnya artefak: di dasar
     halaman memang tidak ada lagi jarak tersisa, dan itu benar, bukan getaran. Jadi putaran
     wheel dibatasi 55% panjang scroll, dan rekam berhenti begitu input berhenti.
+13. **"Sebesar objek lain" tidak bisa dijawab dari kotak CSS-nya, dan satuannya harus
+    mengikuti milik objek yang ditiru.** Motif hero memenuhi seluruh viewport
+    1440×900, sedangkan armillary selalu kotak persegi — jadi perbandingan kotak
+    tidak berarti apa-apa; yang dibandingkan adalah luas *extent* piksel yang
+    benar-benar menyala di masing-masing framebuffer. Setelah itu, angka ini
+    masih bisa meleset: percobaan pertama memakai `vw`, dan menghasilkan 149% di
+    1440px tapi 77% di 1024px. Sebabnya motif hero praktis konstan terhadap
+    lebar layar (339×632 di 1440, 341×628 di 1024) karena terikat **tinggi**
+    viewport, sedangkan `vw` mengikutinya tumbuh. Menyalin satuan tanpa mengukur
+    asal ukuran objek yang ditiru selalu berakhir seperti ini.
+14. **Pengukuran yang benar pun bisa terlalu longgar, kalau metodologinya salah
+    urut.** Untuk legibilitas teks di depan armillary, tiga kesalahan bertumpuk
+    semuanya memberi jawaban terlalu longgar, dan ketiganya
+    baru ketahuan setelah dibongkar:
+    - **Kompositing harus di ruang sRGB.** Browser mencampur alpha di ruang sRGB.
+      Versi pertama mencampur di ruang linear dengan alasan "luminansi itu
+      linear", dan hasilnya **1.00:1** — jauh lebih buruk dari kenyataan, bukan
+      lebih baik: mencampur dulu lalu mengukur luminansi menaikkan rasio, jadi
+      alatnya sendiri longgar. Urutan benar: cincin di-alpha-kan di atas latar
+      (sRGB) → teks di-alpha-kan di atas itu (sRGB) → baru luminance WCAG.
+    - **Puncak intensitas geometris tipis bukan konstanta.** Satu frame
+      melaporkan puncak alpha cincin 0.154; ada fase rotasi di mana garis
+      wireframe sejajar grid piksel, tidak lagi tersebar antialiasing, dan
+      puncaknya **0.35** — lebih dari dua kali lipat. Ambang yang dihitung dari
+      satu frame terlihat jauh lebih longgar daripada kasus terburuknya.
+      (Catatan: kesalahan ini bergerak ke arah yang berlawanan dengan dua di atas —
+      di sini jendela yang terlalu pendek justru membuat angka **terlalu rendah**, dan
+      yang terlalu pendek juga bisa membuat elemen lain terbaca "0 piksel
+      tertutup" padahal cincin sedang menyentuhnya.)
+    - **Analitik memberi urutan besaran, bukan angka siap pakai.** Frontier
+      yang dihitung manual menunjuk opasitas 0.22; saat diukur, angka itu hanya
+      menghasilkan 4.28:1, karena asumsinya satu garis tegak lurus piksel
+      padahal empat cincin bisa menumpuk di satu piksel. Karena itu angka final
+      selalu diambil dari sapuan di halaman sungguhan, bukan dari perhitungan.
+
+    Pelajarannya lebih umum dari armillary: alat ukur yang benar belum tentu
+    memanggilnya dengan benar. Tiga kasus di atas semuanya lulus lebih dulu,
+    dan yang menyelamatkan keadaan bukan pembacaan kode, melainkan membandingkan
+    hasil dengan probe yang berdiri sendiri.
 
 ---
 
@@ -231,7 +276,7 @@ Helixa Olympiad/
 ├─ public/fonts/           # Cormorant Garamond + Manrope variable woff2 (SIL OFL, latin, ~62 kB)
 ├─ scripts/
 │  ├─ audit.mjs                # 11 viewport + deteksi overflow / teks terpotong / target sentuh
-│  ├─ verify.mjs               # cek statis + B1-B17 perilaku, animasi, scroll & performa (167 cek)
+│  ├─ verify.mjs               # cek statis + B1-B17 perilaku, animasi, scroll & performa (171 cek)
 │  ├─ verify-webgl-off.mjs     # WebGL dimatikan: hero jatuh ke SVG helix (7 cek)
 │  └─ lighthouse.mjs           # Lighthouse Mobile lewat Node API (install di luar repo)
 └─ src/
@@ -263,7 +308,7 @@ Helixa Olympiad/
       ├─ PerdanaInfo.tsx   # stack card (2 dari 2 section yang di-pin)
       ├─ HowToJoin.tsx     # stack rule + scroll lock GSAP + parallax 3 simbol matematika
       ├─ JudgesPartners.tsx
-      ├─ RulesTransparency.tsx  # header kanan, daftar kiri, armillary di kolom kanan
+      ├─ RulesTransparency.tsx  # header kanan, daftar kiri, armillary TENGAH section
       ├─ Faq.tsx           # akordeon CSS grid-rows + inert; stack rule
       ├─ ClosingCta.tsx
       ├─ ornaments/
@@ -358,7 +403,7 @@ WebGL — dan keduanya hanya di mode `rich`:
 | `.hero-ambient` | Glow radial CSS murni, statis | Latar hero | selalu |
 | `HeroParticles` | **WebGL (three.js)**: 560 partikel emas membentuk heliks DNA | Latar hero | `rich` saja |
 | `DnaHelix` | Dua untai sinusoidal berpelintir + anak tangga (SVG) | Section Kenapa Helixa | selalu |
-| `GyroCanvas` | **WebGL (three.js)**: 4 cincin `TorusGeometry` wireframe (armillary) | Kolom kanan section Aturan | `rich` saja |
+| `GyroCanvas` | **WebGL (three.js)**: 4 cincin `TorusGeometry` wireframe (armillary) | **Tengah-tengah** section Aturan, di belakang teks | `rich` saja |
 | `MathSymbols` | Σ, φ, f(x) — **parallax per-simbol** | Latar Cara Ikut | `rich` saja |
 | `GrainOverlay` | `feTurbulence` data-URI | `fixed inset-0`, `pointer-events-none` | selalu |
 | `.hero-scrim` | Gradien gelap **di atas** canvas, melindungi teks dari objek | Antara canvas & konten | selalu |
@@ -430,6 +475,18 @@ benar di tingkat jaringan, bukan sekadar "tidak dieksekusi".
   context baru yang masih hidup. Ada regresi yang mengetuk navbar "Aturan" dua kali.
 - Syarat `visibilitychange` yang tadinya terbalik (`else if (!paused)`) juga diperbaiki —
   sebelumnya loop tidak pernah restart setelah tab kembali.
+- **Kotaknya sekarang bujur sangkar di tengah-tengah section, dan sebesar motif hero.**
+  Dulu wrapper-nya `absolute inset-0` yang menulis utility Tailwind, sehingga utility
+  `left: 50%` di `@layer components` tidak pernah bisa berlaku; sekarang GyroCanvas hanya
+  menempelkan `className` pemanggil dan seluruh posisi/ukuran hidup di `.rules-gyro`.
+  Ukurannya `clamp(280px, 66vh, 720px)` — **satuan `vh`, bukan `vw`**, dengan alasan
+  pengukuran di [jebakan #13](#hasil-verifikasi). Cincin sekarang sengaja melintas di
+  belakang daftar aturan, jadi opasitasnya diturunkan jauh ke **0.16** berdasarkan
+  rasio kontras WCAG terukur, bukan selera — rinciannya di
+  [Armillary di tengah-tengah](#armillary-di-tengah-tengah-seukuran-motif-hero).
+  Yang dikorbankan adalah **terang**, bukan ukuran: pada latar sedekat hitam dengan
+  teks terang, tidak ada opasitas yang sekaligus membuat cincin mencolok dan
+  menjaga teks di atas 4.5:1.
 
 > **Dua pengecualian itu saja.** Tidak ada loop permanen ketiga milik kita. Loop yang tidak
 > perlu (interpolasi cincin kursor) berhenti sendiri begitu menyatu, bukan berputar selama
@@ -637,7 +694,7 @@ Padding adaptif untuk section yang ter-pin diletakkan di `@layer utilities`, buk
 | Perdana | Kiri + garis vertikal emas 2px full-height kiri (`.accent-rule-l`) |
 | Cara Ikut | Header **tengah** (max ~40ch) + langkah grid |
 | Juri & Mitra | Kiri |
-| Aturan & Transparansi | Header **kanan** (`.section-head--right`, ~38ch) + daftar kiri (65ch), armillary di kolom kanan baris yang sama |
+| Aturan & Transparansi | Header **kanan** (`.section-head--right`, ~38ch) + daftar kiri (65ch), armillary **di tengah-tengah section** dan melintas di belakang keduanya |
 | FAQ | Kiri (dua kolom ≥1024px) |
 | CTA Penutup | Tengah |
 
@@ -746,7 +803,7 @@ Mobile-first, dibuka dengan `sm` 640 · `md` 768 · `lg` 1024 · `xl` 1280.
 | <1024px, atau pointer coarse | Mode `simple`: tanpa three.js, tanpa GSAP, tanpa kursor, tanpa parallax, tanpa magnet |
 | ≥1024px + pointer fine | Mode `rich`: semua fitur aktif, termasuk scroll lock Cara Ikut |
 | ≥1024px **dan** ≥720px | `tentang` + `perdana` di-pin sebagai kartu bertumpuk |
-| ≥1280px | Armillary Aturan memakai lebar penuh kolom kanannya (kotak persegi, maks 380px) |
+| ≥1024px + pointer fine | Armillary Aturan jadi kotak persegi **di tengah section**, ukuran `clamp(280px, 66vh, 720px)` — ikut tinggi viewport, bukan lebar, supaya seukuran motif hero di lebar berapa pun |
 | `orientation: landscape` + `max-height: 500px` | Hero tidak lagi memaksa tinggi layar, petunjuk scroll disembunyikan |
 
 Detail penting:
@@ -857,7 +914,7 @@ Semua diukur terhadap **production build** (`npm run build` → `npm run preview
 
 Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 
-**`verify.mjs` — 167 cek lulus / 0 gagal** terhadap build yang sama. Ringkasan bagian:
+**`verify.mjs` — 171 cek lulus / 0 gagal** terhadap build yang sama. Ringkasan bagian:
 
 | Bagian | Yang dibuktikan |
 |---|---|
@@ -880,11 +937,106 @@ Screenshot full-page tiap lebar ada di `screenshots/` (di-git-ignore).
 | B16 | Interpolasi cincin kursor **aktif** saat pointer bergerak dan **0 callback** setelah menyatu |
 | B17 | Scroll: **nol bingkai mundur**, nol bingkai beku >12, lompatan antar-bingkai jauh lebih kecil daripada langkah terjauh, satu bingkai tak melebihi 35% tinggi viewport. Scroll lock: `pin` benar di `top: 0`, runway terpakai **1705px dari 1800px**, garis **penuh (isi=1) tepat saat dilepas**, monotonik, keempat node menyala, halaman tidak beku, dan anchor navbar yang melewati section terkunci tetap mendarat di posisinya |
 
-Tambahan geometri armillary, diuji terpisah di 1440 / 1280 / 1024: seluruh cincin muat di
-kotak kanvas (ruang tepi 24px pada 318×318, 18px pada 238×238), cincin tidak menutupi daftar
-aturan (x=966–1203 vs teks 192–866 di 1440), tidak menutupi header (y=339–608 vs 24–267),
-tetap menggambar setelah keluar-masuk section, dan tetap menggambar setelah navbar "Aturan"
-diklik dua kali.
+### Armillary di tengah-tengah, seukuran motif Hero
+
+Permintaan: objek 3D section Aturan digeser ke tengah-tengah lalu dibesar sampai
+seukuran objek 3D di Hero. Ini membatalkan aturan revisi ke-4 ("dekorasi sisi
+section, tidak menutupi teks") — jadi tiga hal diukur ulang, bukan satu.
+
+| Yang dijaga | Angka terukur (1440 / 1280 / 1024) |
+|---|---|
+| Armillary **tengah** di section, dua sumbu | geser −5 / −4 / −4 px horizontal, 1px vertikal (toleransi 4% lebar viewport) |
+| **Seukuran** motif Hero | luas extent **104% / 105% / 99%** (syarat 70–130%) |
+| Seluruh cincin **muat** di kotaknya | ruang tepi **45px** di kanvas 594×594 pada ketiga lebar |
+| Daftar aturan **tetap utuh** | kotak 674×466 tidak berubah; cincin melintas di belakangnya |
+| Teks **tetap terbaca** | rasio kontras WCAG terburuk **4.83:1** (ambang AA 4.5:1), diukur pada 300 bingkai |
+
+Tiga angka di situ semuanya terukur, dan dua di antaranya telah sempat salah:
+
+- **Satuan ukuran harus `vh`, bukan `vw`.** Motif hero praktis tidak berubah
+  saat lebar berubah — di tinggi 900px extent-nya 341×628 (1024), 343×640
+  (1280), 339×632 (1440), karena motif itu dihitung dalam unit dunia terhadap
+  kanvas setinggi `100svh`. Percobaan dengan `50vw` menghasilkan 149% di
+  1440px tapi 77% di 1024px dari satu angka yang sama. Karena luas extent naik
+  kuadratik terhadap ukuran kotak, konstanta 66vh dipilih dari fit dan sekarang
+  memberi ~100% di ketiga lebar.
+- **Opasitas cincin diturunkan ke 0.16.** Armillary sekarang melintas di
+  belakang paragraf, jadi "masih terbaca" adalah klaim yang harus diukur, bukan
+  dikira-kira. Opasitas disapu di halaman sungguhan (1440×900, 120 bingkai):
+
+  | opacity wrapper | rasio terburuk | pengikat |
+  |---|---|---|
+  | 0.24 | 4.09:1 | lead |
+  | 0.22 | 4.28:1 | lead |
+  | 0.20 | 4.46:1 | lead |
+  | **0.16** | **4.83:1** | lead |
+  | 0.12 | 5.19:1 | lead |
+
+  Ambang 4.5:1 ada di sekitar 0.195, jadi 0.16 dipilih dengan margin nyata.
+  Elemen lain jauh di atas ambang: daftar aturan 11.4:1, judul 14.74:1,
+  eyebrow 7.49:1. Pengikatnya selalu paragraf **lead** — satu-satunya teks yang
+  warnanya benar-benar redup (`rgb(142,142,147)`, polos 6.07:1).
+
+### Konsekuensi yang harus disebutkan, bukan disembunyikan
+
+Pada latar sedekat hitam dengan teks terang, **tidak ada opasitas cincin yang
+sekaligus membuat objek mencolok DAN menjaga teks di atas 4.5:1.** Itu
+pertentaran struktural, bukan salah pilih angka. Yang dikorbankan di sini
+adalah **terang**, bukan **ukuran**: permintaan "seukuran objek Hero" menyangkut
+ukuran dan itu terpenuhi penuh, tapi cincin sekarang terbaca sebagai
+tekstur latar yang redup, bukan sebagai objek utama section.
+
+Dua alternatif sudah diuji dan ditolak dengan angka, bukan dengan selera:
+
+- **Scrim gelap di belakang teks.** Seluruh piksel cincin (**13992 dari 13992**)
+  berada di dalam area yang ditutupi teks — tidak ada zona kosong yang bisa
+  dilindungi. Scrim hanya menghapus objek, dan justru di alpha 0.65 barulah
+  teks lead mencapai 4.5:1.
+- **Memperkecil armillary.** Tidak menyelesaikan masalah, cuma menukar
+  "terlalu terang" jadi "terlalu kecil" — dan langsung melanggar permintaan
+  ukuran.
+
+Satu-satunya jalan lain adalah **menerangi warna teks lead**, karena_headroom_
+kontrasnya bergantung pada luminansi teks, bukan hanya opasitas cincin. Itu
+mengubah hierarki tipografi, jadi tidak dikerjakan sepihak di sini.
+
+### Tiga cara pengukuran ini sempat memberi jawaban palsu
+
+Bagian ini ada karena ketiganya lulus dulu, dan ketiganya berakar sama:
+alatnya sendiri benar, pemanggilannya yang bermasalah.
+
+1. **Kompositing harus di ruang sRGB.** Browser mencampur alpha di ruang sRGB.
+   Versi pertama pemeriksaan justru mencampur di ruang linear dengan alasan
+   "luminansi itu linear", dan hasilnya **1.00:1** untuk paragraf lead. Itu
+   artefak metodologi: mencampur lebih dulu lalu mengukur luminansi memberi
+   rasio yang **lebih tinggi** dari yang benar-benar dilihat mata, jadi
+   pemeriksaan justru menjadi lebih longgar, bukan lebih ketat.
+2. **Jendela pengukuran harus jauh lebih panjang dari satu frame.** Cincin
+   berputar, dan puncaknya bukan konstanta: satu frame melaporkan puncak
+   alpha 0.154, tapi ada fase rotasi di mana garis wireframe sejajar grid
+   piksel, tidak lagi tersebar antialiasing, dan puncaknya mencapai **0.35** —
+   lebih dari dua kali lipat. Mengambil peak dari satu frame membuat ambang AA
+   terlihat longgar padahal kasus terburuknya jauh lebih buruk.
+3. **Analitik memberi urutan besaran, bukan angka siap pakai.** Frontier yang
+   dihitung manual menunjuk 0.22; terukur, angka itu hanya menghasilkan
+   4.28:1. Asumsinya satu garis tegak lurus piksel, padahal empat cincin
+   bisa menumpuk di piksel yang sama. Karena itu opasitas final selalu
+   diambil dari sapuan di halaman sungguhan.
+
+Pengukuran kontrasnya menyusun ulang urutan compositing sungguhan: warna latar
+section → piksel emas dari framebuffer pada alpha-nya → opacity canvas → opacity
+wrapper → warna teks di atasnya, lalu mengambil rasio **terburuk** di seluruh
+kotak tiap elemen — bukan rata-rata. Warna Tailwind v4 ditulis sebagai
+`oklch()`, jadi konversinya lewat Canvas2D 1×1 (Chrome sudah menerima CSS
+Color 4) alih-alih menebak rumus oklch. Posisi scroll yang diukur adalah
+posisi yang benar-benar dilihat user (klik navbar "Aturan" → section mendarat
+di scroll-margin 88px); memakai `scrollIntoView` pada kotak armillary akan
+mendorong header keluar layar dan melaporkan "0 piksel tertutup" yang sebenarnya
+tidak mengukur apa pun.
+
+Armillary juga tetap menggambar setelah keluar-masuk section, dan tetap
+menggambar setelah navbar "Aturan" diklik dua kali (pemulihan context WebGL,
+lihat `GyroCanvas.tsx`).
 
 **`verify-webgl-off.mjs` — 7 cek lulus / 0 gagal** dengan Chrome dijalankan
 `--disable-3d-apis`:
@@ -946,8 +1098,9 @@ sendiri terlalu bising di mesin ini untuk menyimpulkan apa pun:
 | Partikel hero aktif, 1440×900 | ~124 fps (nol frame dibuang) |
 | Giroskop Aturan aktif, 1440×900 | ~124 fps |
 | Kedua scene hidup bersamaan | **tidak pernah terjadi** — jaraknya 5266px, rentang tumpang-tindih −4906px |
-| Armillary setelah keluar-masuk section | tetap menggambar, ~6134 piksel menyala tiap re-entry |
+| Armillary setelah keluar-masuk section | tetap menggambar, ~3763 piksel menyala tiap re-entry |
 | Armillary setelah navbar "Aturan" diklik 2x | tetap menggambar (kanvas baru setiap context dilepas) |
+| Armillary di tengah section, 594×594 | 15 378 piksel menyala di framebuffer (naik dari ~5 200 pada kotak 318×318 versi lama). Jumlah piksel tidak berubah saat opasitas wrapper diturunkan ke 0.16 — yang berubah adalah terang efektifnya, jadi baris ini mengukur "isinya", bukan "kelihatannya" |
 | Semua section 3D jauh dari viewport | **0 callback rAF** (loop gambar benar-benar berhenti) |
 | Sisa rAF saat halaman diam | milik ScrollTrigger (ticker + penjaga `scrollEnd`), ~55–70/s |
 | Kembali ke atas | loop hidup lagi |

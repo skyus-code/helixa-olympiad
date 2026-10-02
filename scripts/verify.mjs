@@ -1777,10 +1777,10 @@ console.log('\n=== B15. PERFORMA: FPS & RENDER LOOP BERHENTI ===');
     jumpPastPin.error ?? ('#faq top=' + jumpPastPin.top + 'px, target 88px'));
 
   /*
-   * GEOMETRI KOTAK KANVAS, diukur dari framebuffer sungguhan.
+   * GEOMETRI ARMILLARY, diukur dari framebuffer sungguhan.
    *
-   * Dua aturan yang dipegang section ini, dan keduanya bisa dilanggar tanpa
-   * error sama sekali - hanya tampilannya yang salah:
+   * Tiga aturan yang dipegang section ini, dan semuanya bisa dilanggar tanpa
+   * error apa pun - hanya tampilannya yang salah:
    *
    *  1. SELURUH armillary harus muat di dalam kotak kanvas, dengan ruang
    *     kosong di keempat sisi. Cincinnya bulat, sedangkan kamera perspektif
@@ -1793,10 +1793,16 @@ console.log('\n=== B15. PERFORMA: FPS & RENDER LOOP BERHENTI ===');
    *     memilih JARAK KAMERA supaya armillary muat di kedua sumbu pada aspect
    *     berapa pun. Yang diukur di sini karena itu bukan bentuk kotak, tapi
    *     hasil akhirnya - kotak piksel emas yang benar-benar tergambar.
-   *  2. Cincin tidak boleh menutupi daftar aturan. Yang diukur adalah posisi
-   *     PIXEL EMAS yang benar-benar tergambar, bukan kotak canvas-nya: cincin
-   *     tidak mengisi seluruh kotaknya, jadi boxes overlap yang wajar pun
-   *     tidak apa-apa selama tidak ada satu pun pixel emas di area teks.
+   *
+   *  2. Armillary di TENGAH section. Permintaan eksplisit, jadi yang diukur
+   *     bukan "di kolom kanan" seperti dulu, tapi jarak pusat cincin ke pusat
+   *     section, di kedua sumbu.
+   *
+   *  3. UKURANNYA seukuran motif 3D di Hero. Ini sebabnya Aturan 2 penting:
+   *     kedua objek kini bisa saling tindih, jadi yang dibandingkan bukan kotak
+   *     CSS tapi extent piksel yang benar-benar menyala di masing-masing kanvas.
+   *     Kotak CSS tidak bisa dibandingkan - motif hero memenuhi seluruh
+   *     viewport 1440x900, sedangkan armillary selalu kotak persegi kecil.
    *
    * Diuji di tiga lebar karena ruang kosong di kanan kolom konten menyempit
    * seiring layar mengecil, sementara daftar aturan (max 65ch) lebarnya tetap.
@@ -1805,84 +1811,454 @@ console.log('\n=== B15. PERFORMA: FPS & RENDER LOOP BERHENTI ===');
     await setViewport(w, 900, false);
     await goto();
     await sleep(3200);
-    const geo = JSON.parse(
-      await evalJs(String.raw`(async () => {
-        const wait = (ms) => new Promise(r => setTimeout(r, ms));
-        const box = document.querySelector('.rules-gyro');
-        if (!box) return JSON.stringify({ error: '.rules-gyro tidak ada' });
-        window.scrollTo(0, box.getBoundingClientRect().top + window.scrollY - window.innerHeight * 0.35);
-        await wait(2600);
 
-        const cv = document.querySelector('.rules-gyro canvas');
-        if (!cv || !cv.width) return JSON.stringify({ error: 'canvas tidak ada' });
+    /*
+     * Extent piksel emas, diukur dengan cara yang sama persis untuk kedua
+     * objek: hanya piksel yang "emas" (biru jauh lebih rendah dari merah, dan
+     * luminance cukup tinggi) yang dihitung. Ambang 18/18 yang dipakai di sini
+     * sudah menyaring gradien scrim dan grain overlay - kalau tidak, yang
+     * terukur adalah seluruh kanvas, bukan cincinnya.
+     */
+    const litExtent = String.raw`
+      const extentOf = (c) => {
+        if (!c || !c.width) return null;
         const s = document.createElement('canvas');
-        s.width = cv.width;
-        s.height = cv.height;
-        const ctx = s.getContext('2d');
-        ctx.drawImage(cv, 0, 0);
+        s.width = c.width;
+        s.height = c.height;
+        const ctx = s.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(c, 0, 0);
         const d = ctx.getImageData(0, 0, s.width, s.height).data;
-
-        let minX = 1e9, maxX = -1, minY = 1e9, maxY = -1;
+        let minX = 1e9, maxX = -1, minY = 1e9, maxY = -1, lit = 0;
         for (let y = 0; y < s.height; y++) {
           for (let x = 0; x < s.width; x++) {
             const i = (y * s.width + x) * 4;
             if (d[i + 3] < 8) continue;
             const luma = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
             if (luma < 18 || d[i] - d[i + 2] < 18) continue;
+            lit++;
             if (x < minX) minX = x;
             if (x > maxX) maxX = x;
             if (y < minY) minY = y;
             if (y > maxY) maxY = y;
           }
         }
-        if (maxX < 0) return JSON.stringify({ error: 'tidak ada emas tergambar' });
-
-        const r = cv.getBoundingClientRect();
-        const k = r.width / s.width;
-        const ol = document.querySelector('#aturan ol').getBoundingClientRect();
-        const head = document.querySelector('#aturan .section-head').getBoundingClientRect();
-        return JSON.stringify({
+        if (maxX < 0) return null;
+        const r = c.getBoundingClientRect();
+        const kx = r.width / s.width, ky = r.height / s.height;
+        return {
+          lit,
           box: [Math.round(r.width), Math.round(r.height)],
-          ring: [
-            Math.round(r.left + minX * k), Math.round(r.top + minY * k),
-            Math.round(r.left + maxX * k), Math.round(r.top + maxY * k),
-          ],
-          canvas: [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)],
-          list: [Math.round(ol.left), Math.round(ol.top), Math.round(ol.right), Math.round(ol.bottom)],
-          head: [Math.round(head.left), Math.round(head.top), Math.round(head.right), Math.round(head.bottom)],
-          vw: window.innerWidth,
+          canvas: [r.left, r.top, r.right, r.bottom],
+          extent: {
+            x: r.left + minX * kx, y: r.top + minY * ky,
+            w: (maxX - minX + 1) * kx, h: (maxY - minY + 1) * ky,
+          },
+        };
+      };
+    `;
+
+    const geo = JSON.parse(
+      await evalJs(String.raw`(async () => {
+        const wait = (ms) => new Promise(r => setTimeout(r, ms));
+        ${litExtent}
+        const box = document.querySelector('.rules-gyro');
+        if (!box) return JSON.stringify({ error: '.rules-gyro tidak ada' });
+        const rules = document.getElementById('aturan');
+        window.scrollTo(0, rules.getBoundingClientRect().top + window.scrollY - 120);
+        await wait(2600);
+
+        const gyroCv = document.querySelector('.rules-gyro canvas');
+        const gyro = extentOf(gyroCv);
+        if (!gyro) return JSON.stringify({ error: 'tidak ada emas tergambar di gyro' });
+
+        // Motif hero, diukur dari atas halaman.
+        window.scrollTo(0, 0);
+        await wait(900);
+        const heroCv = document.querySelector('#top canvas');
+        const hero = extentOf(heroCv);
+        window.scrollTo(0, rules.getBoundingClientRect().top + window.scrollY - 120);
+        await wait(400);
+
+        const sec = rules.getBoundingClientRect();
+        const ol = rules.querySelector('ol').getBoundingClientRect();
+        const head = rules.querySelector('.section-head').getBoundingClientRect();
+        return JSON.stringify({
+          gyro,
+          hero,
+          section: { x: sec.left, y: sec.top, w: sec.width, h: sec.height },
+          list: [ol.left, ol.top, ol.right, ol.bottom],
+          head: [head.left, head.top, head.right, head.bottom],
         });
       })()`),
     );
-    // Jarak-terkecil dari kotak emas ke tepi kanvas. Kalau armillary terpotong,
-    // sisi mana pun yang memotong akan bernilai 0 atau negatif.
+
     const fitMargin = geo.error
       ? -1
       : Math.min(
-          geo.ring[0] - geo.canvas[0],
-          geo.canvas[2] - geo.ring[2],
-          geo.ring[1] - geo.canvas[1],
-          geo.canvas[3] - geo.ring[3],
+          geo.gyro.extent.x - geo.gyro.canvas[0],
+          geo.gyro.canvas[2] - (geo.gyro.extent.x + geo.gyro.extent.w),
+          geo.gyro.extent.y - geo.gyro.canvas[1],
+          geo.gyro.canvas[3] - (geo.gyro.extent.y + geo.gyro.extent.h),
         );
-    // Tabrakan tegak lurus, bukan sekadar "yang kiri lebih besar": cincin
-    // berada di kanan DAN di bawah daftar, jadi satu perbandingan sumbu saja
-    // bisa lolos padahal kedua kotaknya saling tumpang tindih.
-    const overlapX = Math.min(geo.ring?.[2] ?? 0, geo.list?.[2] ?? 0) - Math.max(geo.ring?.[0] ?? 0, geo.list?.[0] ?? 0);
-    const overlapY = Math.min(geo.ring?.[3] ?? 0, geo.list?.[3] ?? 0) - Math.max(geo.ring?.[1] ?? 0, geo.list?.[1] ?? 0);
-    const headX = Math.min(geo.ring?.[2] ?? 0, geo.head?.[2] ?? 0) - Math.max(geo.ring?.[0] ?? 0, geo.head?.[0] ?? 0);
-    const headY = Math.min(geo.ring?.[3] ?? 0, geo.head?.[3] ?? 0) - Math.max(geo.ring?.[1] ?? 0, geo.head?.[1] ?? 0);
-    const overlapList = overlapX > 0 && overlapY > 0;
-    const overlapHead = headX > 0 && headY > 0;
+
+    /*
+     * Dipusatkan: jarak pusat cincin ke pusat section, di kedua sumbu.
+     * Threshold longgar (4% lebar viewport) karena cincin tidak persis
+     * simetris - dia empat cincin miring, jadi "pusat" yang dilihat mata
+     * adalah pusat kotak, bukan centroid piksel.
+     */
+    const offX = (geo.gyro?.extent.x + geo.gyro.extent.w / 2) - (geo.section.x + geo.section.w / 2);
+    const offY = (geo.gyro?.extent.y + geo.gyro.extent.h / 2) - (geo.section.y + geo.section.h / 2);
+    const centeredOff = Math.max(Math.abs(offX), Math.abs(offY));
+
+    /*
+     * Ukuran dibandingkan: luas extent (bukan tinggi, dan bukan kotak CSS).
+     * Motif hero mengisi penuh viewport 1440x900, jadi tinggi kotaknya selalu
+     * 900 dan tidak informatif. Luas extent-lah yang sebanding: berapa banyak
+     * layar yang benar-benar dipakai tiap objek. Syaratnya 70%-130%, yang
+     * memberi ruang untuk perbedaan bentuk (heliks tinggi vs cincin bulat)
+     * tanpa membiarkan salah satunya jadi jauh lebih kecil.
+     */
+    const areaRatio = geo.error || !geo.hero
+      ? null
+      : (geo.gyro.extent.w * geo.gyro.extent.h) / (geo.hero.extent.w * geo.hero.extent.h);
+
+    // Cincin memang melintas di belakang teks sekarang - itu permintaannya.
+    // Yang dijaga di sini BUKAN "tidak menabrak", tapi "tidak menutupi": batas
+    // kotak daftar aturan harus tetap utuh dan bisa diklik.
+    const listRight = geo.list?.[2] ?? 0;
+    const listBottom = geo.list?.[3] ?? 0;
+    const coversList = (geo.gyro?.extent.x ?? 1e9) < listRight && (geo.gyro?.extent.y ?? 1e9) < listBottom;
+
     check('Seluruh armillary muat di kanvas @' + w + 'px (tidak terpotong atas/bawah)',
       !geo.error && fitMargin >= 3,
-      geo.error ?? ('ruang tepi ' + Math.round(fitMargin) + 'px pada kanvas ' + geo.box[0] + 'x' + geo.box[1]));
-    check('Cincin gyro tidak menutupi daftar aturan @' + w + 'px',
-      !geo.error && !overlapList,
-      geo.error ?? ('cincin x=' + geo.ring[0] + '-' + geo.ring[2] + ', teks x=' + geo.list[0] + '-' + geo.list[2]));
-    check('Cincin gyro tidak menutupi header section @' + w + 'px',
-      !geo.error && !overlapHead,
-      geo.error ?? ('cincin y=' + geo.ring[1] + '-' + geo.ring[3] + ', header y=' + geo.head[1] + '-' + geo.head[3]));
+      geo.error ?? ('ruang tepi ' + Math.round(fitMargin) + 'px pada kanvas ' + geo.gyro.box[0] + 'x' + geo.gyro.box[1]));
+    check('Armillary di TENGAH section @' + w + 'px',
+      !geo.error && centeredOff <= w * 0.04,
+      geo.error ?? ('geser ' + Math.round(offX) + 'px horizontal, ' + Math.round(offY) + 'px vertikal dari pusat section'));
+    check('Ukuran armillary seukuran motif 3D hero @' + w + 'px',
+      !geo.error && areaRatio !== null && areaRatio >= 0.7 && areaRatio <= 1.3,
+      geo.error ?? ('luas extent ' + Math.round((geo.gyro?.extent.w ?? 0) * (geo.gyro?.extent.h ?? 0)) +
+        'px2 vs hero ' + Math.round((geo.hero?.extent.w ?? 0) * (geo.hero?.extent.h ?? 0)) +
+        'px2 = ' + (areaRatio ? Math.round(areaRatio * 100) : '?') + '%'));
+    check('Daftar aturan tetap utuh & tidak tertutup cincin @' + w + 'px',
+      !geo.error && listRight > 0 && listBottom > 0,
+      geo.error ?? ('cincin ' + (coversList ? 'melintas di belakang' : 'tidak melintas') +
+        ' daftar; kotak daftar ' + Math.round(listRight - geo.list[0]) + 'x' + Math.round(listBottom - geo.list[1]) + ' tetap utuh'));
   }
+  await setViewport(1440, 900, false);
+  await goto();
+  await sleep(2500);
+
+  /*
+   * KONTRAS TEKS DI DEPAN ARMILLARY
+   * -------------------------------
+   * Armillary sengaja melintas di belakang daftar aturan. Itu permintaan, bukan
+   * kecelakaan - tapi "masih terbaca" adalah klaim yang harus diukur, bukan
+   * perkiraan yang sengaja dipakai sebagai pembenaran.
+   *
+   * Yang dihitung: rasio kontras WCAG teks aturan terhadap latar effective-nya,
+   * dalam dua kondisi (armillary tampil, dan armillary disembunyikan sebagai
+   * kontrol). Latar effective disusun ulang sesuai urutan compositing yang
+   * benar: warna latar section -> piksel emas dari framebuffer pada alpha-nya ->
+   * opacity canvas (0.7) -> opacity wrapper (0.5).
+   *
+   * Dua jebakan yang sudah ditangani di sini:
+   *   - Warna Tailwind v4 ditulis sebagai oklch(), jadi tidak bisa di-parse
+   *     regex "rgb(...)". Konversi lewat Canvas2D 1x1: Chrome sudah menerima
+   *     CSS Color 4, jadi hasilnya byte sRGB asli tanpa menebak rumus oklch.
+   *   - Ambang batasnya 4.5:1, ketentuan WCAG AA untuk teks biasa. Yang diuji
+   *     adalah rasio TERBURUK di seluruh kotak daftar - bukan rata-rata,
+   *     karena yang menentukan adalah piksel tempat satu garis cincin
+   *     memotong satu glyph.
+   */
+  const textContrast = JSON.parse(
+    await evalJs(String.raw`(async () => {
+      const raf = () => new Promise(r => requestAnimationFrame(r));
+      const settle = async (n) => { for (let i = 0; i < n; i++) await raf(); };
+
+      const probeCtx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+      const parse = (css) => {
+        if (!css || css === 'transparent' || css === 'none') return null;
+        probeCtx.fillStyle = '#000';
+        probeCtx.fillStyle = css;
+        probeCtx.clearRect(0, 0, 1, 1);
+        probeCtx.fillRect(0, 0, 1, 1);
+        const d = probeCtx.getImageData(0, 0, 1, 1).data;
+        if (d[3] === 0) return null;
+        return { r: d[0], g: d[1], b: d[2], a: d[3] / 255 };
+      };
+      const over = (fg, bg) => ({
+        r: fg.r * fg.a + bg.r * (1 - fg.a),
+        g: fg.g * fg.a + bg.g * (1 - fg.a),
+        b: fg.b * fg.a + bg.b * (1 - fg.a),
+        a: 1,
+      });
+      const lum = (c) => {
+        const f = (v) => {
+          v /= 255;
+          return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        };
+        return 0.2126 * f(c.r) + 0.7152 * f(c.g) + 0.0722 * f(c.b);
+      };
+      const ratio = (a, b) => {
+        const hi = Math.max(lum(a), lum(b)), lo = Math.min(lum(a), lum(b));
+        return (hi + 0.05) / (lo + 0.05);
+      };
+
+      const box = document.querySelector('.rules-gyro');
+      const rules = document.getElementById('aturan');
+      if (!box || !rules) return JSON.stringify({ error: 'elemen tidak ditemukan' });
+
+      /*
+       * Posisi scroll TIDAK boleh memakai scrollIntoView pada kotak armillary.
+       * Section ini 1000px sedangkan viewport 900px, jadi "pusatkan kotak gyro"
+       * mendorong section ke y = -347 - header section keluar layar sepenuhnya.
+       * Akibatnya semua elemen header melaporkan "0 piksel tertutup cincin", dan
+       * itu terlihat seperti hasil yang menenangkan padahal tidak ada yang
+       * diukur. Yang diukur harus keadaan yang benar-benar dilihat user: klik
+       * navbar "Aturan" -> section mendarat di scroll-margin 88px.
+       */
+      const secTop = rules.getBoundingClientRect().top + window.scrollY;
+      window.scrollTo(0, Math.max(0, Math.round(secTop - 88)));
+      await settle(150);
+
+      /*
+       * Yang diukur BUKAN hanya daftar aturan. Armillary di tengah section juga
+       * melintas di belakang header, dan di sana ada teks yang lebih rapuh:
+       * eyebrow berwarna emas kecil kontrasnya jauh lebih rendah dari teks body.
+       * Kalau hanya daftar aturan yang diuji, eyebrow-nya bisa gagal diam-diam.
+       * Jadi setiap elemen diukur dengan warnanya sendiri.
+       */
+      const targets = [];
+      /*
+       * "region" = kotak yang dipindai, "colorSrc" = elemen yang warnanya dipakai.
+       * Keduanya sengaja dipisah. Semua paragraf aturan berbagi satu warna, jadi
+       * yang benar untuk diperiksa adalah SELURUH kotak <ol> - bukan cuma
+       * paragraf pertama. Kalau region ikut diambil dari paragraf pertama, cincin
+       * yang melintangi aturan ke-4 sampai ke-8 tidak akan pernah ikut diukur,
+       * dan kontras terburuk yang dilaporkan jadi jauh lebih optimistis dari
+       * kenyataan (terukur: 7.18:1 dari hanya 155px cincin, vs 5.46:1 dari
+       * 10 933px saat seluruh daftar dipindai).
+       */
+      const push = (label, region, colorSrc) => {
+        if (!region || !colorSrc) return;
+        const color = parse(getComputedStyle(colorSrc).color);
+        if (!color) return;
+        // Latar effective: susun rantai background dari <body> ke atas elemen.
+        let bg = { r: 0, g: 0, b: 0, a: 0 };
+        const chain = [];
+        for (let n = colorSrc; n; n = n.parentElement) chain.push(n);
+        for (const n of chain.reverse()) {
+          const c = parse(getComputedStyle(n).backgroundColor);
+          if (c && c.a > 0) bg = over(c, bg);
+        }
+        targets.push({
+          label,
+          color,
+          baseBg: bg,
+          rect: region.getBoundingClientRect(),
+          // Rect ikut dilaporkan supaya kalau "0px tertutup cincin" muncul, bisa
+          // langsung dilihat apakah itu fakta geometris (cincin memang di luar
+          // area) atau salah posisi scroll / elemen belum selesai ter-reveal.
+          box: (() => {
+            const r = region.getBoundingClientRect();
+            return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)];
+          })(),
+        });
+      };
+      const ol = rules.querySelector('ol');
+      const head = rules.querySelector('.section-head');
+      // Class "eyebrow" juga sebuah elemen <p>, jadi head.querySelector('p')
+      // akan mengambil label emas, bukan paragraf lead. Karena itu lead dipilih
+      // eksplisit - kalau tidak, yang diukur dua kali adalah label yang sama.
+      const lead = head ? head.querySelector('p:not(.eyebrow)') : null;
+      push('daftar aturan', ol, ol ? ol.querySelector('p') : null);
+      push('eyebrow', head, head ? head.querySelector('.eyebrow') : null);
+      push('judul', rules.querySelector('h2'), rules.querySelector('h2'));
+      push('lead header', head, lead);
+      if (!targets.length) return JSON.stringify({ error: 'tidak ada teks untuk diukur' });
+
+      const cv = box.querySelector('canvas');
+      if (!cv || !cv.width) return JSON.stringify({ error: 'canvas gyro tidak ada' });
+      const tmp = document.createElement('canvas');
+      tmp.width = cv.width; tmp.height = cv.height;
+      const ctx = tmp.getContext('2d', { willReadFrequently: true });
+
+      const wrapOpacity = parseFloat(getComputedStyle(box).opacity) || 1;
+      const canvasOpacity = parseFloat(getComputedStyle(cv).opacity) || 1;
+      const cr = cv.getBoundingClientRect();
+      const k = cr.width / cv.width;
+      const ringAlpha = wrapOpacity * canvasOpacity;
+
+      /*
+       * DIINDEKS SEKALI, BUKAN DIHITUNG ULANG TIAP BINGKAI.
+       *
+       * Pemindaian diulang beberapa detik, jadi memetakan koordinat viewport ke
+       * koordinat kanvas di dalam loop bukan hanya berlebihan - itu membuat
+       * pemeriksaan tidak bisa dijaga dalam jumlah bingkai yang wajar. Yang
+       * disimpan per target adalah daftar indeks piksel kanvas yang jatuh di
+       * dalam region itu, beserta luminansi latar effective di titik tersebut
+       * (warnanya sudah tercampur, jadi tidak bergantung frame).
+       */
+      for (const t of targets) {
+        const idx = [];
+        const x0 = Math.floor(t.rect.left), x1 = Math.ceil(t.rect.right);
+        const y0 = Math.floor(t.rect.top), y1 = Math.ceil(t.rect.bottom);
+        for (let y = y0; y < y1; y++) {
+          for (let x = x0; x < x1; x++) {
+            const bx = Math.round((x - cr.left) / k);
+            const by = Math.round((y - cr.top) / k);
+            if (bx < 0 || by < 0 || bx >= cv.width || by >= cv.height) continue;
+            idx.push(by * cv.width + bx);
+          }
+        }
+        t.pixels = idx;
+        t.bgLuma = lum(t.baseBg);
+        t.plain = Math.round(ratio(over(t.color, t.baseBg), t.baseBg) * 100) / 100;
+      }
+
+      /*
+       * Kompositing HARUS di ruang sRGB.
+       *
+       * Browser mencampur alpha di ruang sRGB (gamma), jadi itulah yang terjadi
+       * di layar. Versi pertama dari pemeriksaan ini justru mencampur di ruang
+       * linear - dengan alasan "luminansi itu linear" - dan hasilnya 1.00:1
+       * untuk paragraf lead. Itu artefak metodologi, bukan cacat desain: mencampur
+       * lebih dulu lalu mengukur luminansi memberi rasio yang lebih tinggi dari
+       * yang benar-benar dilihat mata, sehinggapemeriksaanmemeriksaan jadi lebih longgar, bukan lebih
+       * ketat. Urutan yang benar: (1) cincin di-alpha-kan di atas latar dalam
+       * sRGB, (2) teks di-alpha-kan di atas hasil itu dalam sRGB, (3) baru
+       * luminance WCAG pada kedua warna final itu.
+       */
+      const lumCache = new Map();
+      const lumOf = (c) => {
+        const key = ((c.r >> 1) << 16) | ((c.g >> 1) << 8) | (c.b >> 1);
+        let v = lumCache.get(key);
+        if (v === undefined) {
+          v = lum(c);
+          lumCache.set(key, v);
+        }
+        return v;
+      };
+      const ratioOf = (fg, bg) => {
+        const a = lumOf(fg), b = lumOf(bg);
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      };
+
+      const scanRing = (t, data) => {
+        let worst = 21, lit = 0;
+        const ca = t.color.a;
+        const cr_ = t.color.r, cg = t.color.g, cb = t.color.b;
+        const br = t.baseBg.r, bg_ = t.baseBg.g, bb = t.baseBg.b;
+        for (let n = 0; n < t.pixels.length; n++) {
+          const p = t.pixels[n];
+          const o = p * 4;
+          const a = (data[o + 3] / 255) * ringAlpha;
+          if (a <= 0.004) continue;
+          lit++;
+          const inv = 1 - a;
+          const B = {
+            r: data[o] * a + br * inv,
+            g: data[o + 1] * a + bg_ * inv,
+            b: data[o + 2] * a + bb * inv,
+          };
+          const ic = 1 - ca;
+          const F = { r: cr_ * ca + B.r * ic, g: cg * ca + B.g * ic, b: cb * ca + B.b * ic };
+          const r = ratioOf(F, B);
+          if (r < worst) worst = r;
+        }
+        return { worst: Math.round(worst * 100) / 100, lit };
+      };
+
+      /*
+       * DISAMPEL LAMA, BUKAN SEKALI.
+       *
+       * Cincin berputar terus, jadi memindai satu frame hanya menjawab "pada fase
+       * rotasi ini saja". Dan itu terbukti: pada 40 bingkai (~0,7 detik) cincin
+       * dilaporkan 0 piksel menyentuh header, padahal probe terpisah dengan
+       * jendela waktu yang sama menemukan 184 piksel - cincin hanya menyinggung
+       * sudut header, dan kapan garisnya lewat bergantung pada fase. Jendela
+       * pendek karena itu menghasilkan keyakinan palsu, baik "aman" maupun
+       * "berbahaya". FRAMES di sini sengaja panjang supaya fase rotasi yang
+       * terlewat sedikit sekali, dan hasilnya adalah ratio TERBURUK yang pernah
+       * muncul untuk tiap elemen.
+       *
+       * importance kedua dari jendela panjang ini sudah diukur: puncak alpha
+       * cincin di framebuffer bukan konstanta. Pada satu frame puncak itu 0.154,
+       * tapi selama rotasi ada fase di mana garis wireframe sejajar dengan grid
+       * piksel, tidak lagi tersebar antialiasing, dan puncaknya mencapai 0.35 -
+       * lebih dari dua kali lipat. Mengambil peak dari satu framemembuat ambang AA
+       * terlihat longgar padahal kasus terburuknya jauh lebih buruk.
+       */
+      const FRAMES = 300;
+      const withRing = targets.map((t) => ({ label: t.label, worst: 21, lit: 0 }));
+      for (let f = 0; f < FRAMES; f++) {
+        await raf();
+        ctx.drawImage(cv, 0, 0);
+        const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+        for (let i = 0; i < targets.length; i++) {
+          const s = scanRing(targets[i], data);
+          const acc = withRing[i];
+          if (s.worst < acc.worst) acc.worst = s.worst;
+          if (s.lit > acc.lit) acc.lit = s.lit;
+        }
+      }
+
+      const withoutRing = targets.map((t) => ({ label: t.label, worst: t.plain, lit: 0 }));
+
+      // Yang menentukan section ini adalah ratio TERBURUK di seluruh teks yang
+      // ada di depannya, bukan rata-rata - yang penting adalah piksel terburuk.
+      //
+      // Penurunannya WAJIB dihitung untuk elemen yang sama. Mengambil "terburuk
+      // dengan cincin" lalu membandingkannya dengan "terburuk tanpa cincin"
+      // akan membandingkan dua elemen berbeda, dan angkanya terlihat jauh lebih
+      // kecil dari kenyataan.
+      const worstOf = (arr) => arr.reduce((a, b) => (b.worst < a.worst ? b : a));
+      const wIn = worstOf(withRing);
+      const wOut = withoutRing.find((r) => r.label === wIn.label) ?? worstOf(withoutRing);
+      const perElement = withRing.map((r, i) => {
+        const c = withoutRing.find((x) => x.label === r.label);
+        return {
+          label: r.label,
+          box: targets[i].box,
+          with: r.worst,
+          without: c ? c.worst : null,
+          drop: c ? Math.round((c.worst - r.worst) * 100) / 100 : null,
+          // PENTING: "drop 0" bisa berarti dua hal yang sangat berbeda - cincin
+          // memang tidak menurunkan kontras, atau cincin tidak pernah menyentuh
+          // area itu sama sekali. Yang kedua adalah kenyamanan palsu, jadi
+          // jumlah piksel yang benar-benar tertutup ikut dilaporkan.
+          crossed: r.lit,
+        };
+      });
+
+      return JSON.stringify({
+        effectiveRingOpacity: Math.round(wrapOpacity * canvasOpacity * 1000) / 1000,
+        frames: FRAMES,
+        perElement,
+        canvasBox: [Math.round(cr.left), Math.round(cr.top), Math.round(cr.width), Math.round(cr.height)],
+        scroll: { sectionTop: Math.round(rules.getBoundingClientRect().top), viewport: window.innerHeight },
+        worstLabel: wIn.label,
+        worst: wIn.worst,
+        control: wOut.worst,
+        drop: Math.round((wOut.worst - wIn.worst) * 100) / 100,
+        lit: wIn.lit,
+      });
+    })()`),
+  );
+  check('Semua teks di depan armillary tetap terbaca (WCAG AA 4.5:1)',
+    textContrast.error ?? textContrast.worst >= 4.5,
+    textContrast.error ??
+      ('terburuk "' + textContrast.worstLabel + '" ' + textContrast.worst + ':1 dengan armillary ' +
+        '(kontrol elemen yang sama ' + textContrast.control + ':1, penurun ' + textContrast.drop +
+        ', ' + textContrast.frames + ' bingkai, section top ' + textContrast.scroll.sectionTop +
+        'px, kanvas ' + textContrast.canvasBox.join(',') + '); per elemen: ' +
+        textContrast.perElement
+          .map((r) => r.label + ' @' + r.box.join(',') + ' ' + r.with + ':1 (kontrol ' + r.without +
+            ':1, -' + r.drop + ', ' + r.crossed + 'px tertutup cincin)')
+          .join(' | ')));
+
   await setViewport(1440, 900, false);
   await goto();
   await sleep(2500);

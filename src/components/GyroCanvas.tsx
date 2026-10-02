@@ -155,12 +155,24 @@ export function GyroCanvas({ className = '' }: { className?: string }) {
 
   if (!eligible || failed) return null;
 
+  /*
+   * Wrapper TIDAK lagi memakai `absolute inset-0` bawaan. Position, ukuran, dan
+   * transform-nya diserahkan sepenuhnya ke `className` pemanggil (`.rules-gyro`
+   * di index.css), karena:
+   *
+   *   - utility Tailwind selalu menang atas `@layer components` pada spesifisitas
+   *     yang sama. Dulu `absolute inset-0` di sini mengalahkan aturan
+   *     `left: 50%` di CSS, dan kanvas pernah melebar penuh melebihi kolom teks.
+   *   - armillary sekarang duduk di TENGAH section pada kotak persegi berukuran
+   *     tetap, bukan meluas mengikuti section. Kalau wrapper ikut meluas, kanvas
+   *     ikut memanjang dan cincinnya kembali terpotong atas-bawah.
+   *
+   * `overflow-hidden` ikut dipindah ke pemanggil supaya clipping diurus di satu
+   * tempat. Kanvas di dalam tetap `absolute inset-0`: dia mengisi kotak persegi
+   * yang sudah ditentukan pemanggil, tanpa ikut memanjang mengikuti section.
+   */
   return (
-    <div
-      ref={wrapperRef}
-      aria-hidden="true"
-      className={'pointer-events-none absolute inset-0 overflow-hidden ' + className}
-    >
+    <div ref={wrapperRef} aria-hidden="true" className={'pointer-events-none ' + className}>
       <canvas key={generation} ref={canvasRef} className="absolute inset-0 h-full w-full opacity-70" />
     </div>
   );

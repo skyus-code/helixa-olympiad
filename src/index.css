@@ -547,26 +547,92 @@
 
   /* ---- Giroskop armillary (section Aturan) ------------------------------- */
   /*
-   * Hanya dua hal yang diatur di sini, dan keduanya disengaja:
+   * Armillary di TENGAH section, sebesar mungkin, dan sekarang memang
+   * melintas di belakang daftar aturan. Ukuran dan posisinya ada di sini,
+   * bukan di JSX, karena:
    *
-   *  - `opacity`: cincin emas harus kalah oleh ketebalan tipografi aturan.
-   *  - `contain`: layout+paint membuat browser tahu area ini tidak memengaruhi
-   *    layout di sekitarnya dan tidak perlu melacak apa pun yang keluar dari
-   *    kotak kanvas. `size` sengaja tidak dipakai: contain:size menghitung
-   *    elemen seolah isinya kosong, padahal ukuran kotak ini ikut menentukan
-   *    tinggi kolom kanan tempat armillary duduk.
+   *  - utility Tailwind menang atas `@layer components` pada spesifisitas
+   *    yang sama. Dulu GyroCanvas menulis `absolute inset-0`, jadi aturan
+   *    `left: 50%` di blok ini tidak akan pernah berlaku. Sekarang GyroCanvas
+   *    hanya menempelkan `className` yang diberikan pemanggil, jadi blok ini
+   *    benar-benar memiliki posisi.
    *
-   * Posisi dan ukuran kotaknya TIDAK di sini. Kotaknya ada di
-   * components/RulesTransparency.tsx sebagai elemen flow dengan aspect 1:1 di
-   * dalam kolom kanan section, lalu GyroCanvas mengisi kotak itu dengan
-   * `absolute inset-0`. Alasannya cascade: `absolute inset-0` yang ditulis
-   * GyroCanvas adalah utility Tailwind, dan utility selalu mengalahkan
-   * `@layer components` berapa pun spesifisitasnya. Aturan `left: 50%` yang
-   * pernah ada di blok ini karena itu sama sekali tidak pernah berlaku, dan
-   * kanvas pernah melebar penuh melebihi kolom teks.
+   * `--gyro-size` adalah angka yang harus dibaca bareng motif hero, dan tidak
+   * boleh diubah tanpa mengukur ulang motif itu.
+   *
+   * Yang dibandingkan adalah BOUNDING BOX piksel yang benar-benar menyala, bukan
+   * kotak CSS. Pada 1440x900 motif DNA hero 339 x 632px.
+   *
+   * Yang dipakai adalah vh, bukan vw, dan itu hasil pengukuran.
+   *
+   * Alasannya: motif hero praktis TIDAK BERUBAH saat lebar layar berubah.
+   * Di tinggi 900px extent-nya 341x628 (1024), 343x640 (1280), 339x632
+   * (1440). Motif itu dihitung dalam unit dunia terhadap kanvas setinggi
+   * 100svh, jadi ia terikat TINGGI viewport, bukan lebarnya. Armillary yang
+   * diukur dengan vw akan ikut tumbuh bersama lebar layar sementara hero
+   * diam - dan itulah yang membuat percobaan pertama gagal: 149% di 1440px
+   * tapi 77% di 1024px, dari satu angka yang sama sekali.
+   *
+   * Kalau yang ditiru dari hero adalah TINGGI, maka satuan yang harus
+   * diikuti juga tinggi. Karena luas extent naik kuadratik terhadap ukuran
+   * kotak, konstanta 66vh dipilih dari hasil fit: pada 900px tinggi ia
+   * menghasilkan sekitar 101% luas motif hero di ketiga lebar uji. Batas
+   * bawah 280px mencegah kotak menyusut absurd di layar pendek; batas atas
+   * 720px mencegah meluber keluar section yang tingginya 1000px.
    */
   .rules-gyro {
-    opacity: 0.62;
+    --gyro-size: clamp(280px, 66vh, 720px);
+
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--gyro-size);
+    height: var(--gyro-size);
+    transform: translate(-50%, -50%);
+    overflow: hidden;
+    /*
+     * Cincin harus tetap kalah oleh tipografi, sekarang setelah melintas di
+     * belakang paragraf. Angka ini bukan selera, dan warna teks tidak diubah
+     * hanya demi kenyamanan mata - jadi angka yang bergerak adalah opasitas.
+     *
+     * PENTING: angka di sini SELALU hasil sapuan empiris, bukan hasil tebakan
+     * dari perhitungan. Percobaan pertama menebak dari frontier analitik dan
+     * hasilnya meleset: tebakan 0.22 seemed sudah cukup, padahal terukur
+     * hanya 4.28:1 - di bawah ambang. Sebabnya frontier analitik mengasumsikan
+     * satu garis cincin tegak lurus piksel, padahal ada empat cincin yang bisa
+     * menumpuk di piksel yang sama sehingga kompositnya lebih pekat. Jadi
+     * frontier analitik hanya berguna sebagai urutan besaran, tidak sebagai
+     * angka siap pakai.
+     *
+     * Sapuan di halaman sungguhan (1440x900, 120 bingkai, rasio terburuk pada
+     * piksel terburuk di empat blok teks di depan armillary):
+     *
+     *   0.24 -> 4.09:1      0.20 -> 4.46:1
+     *   0.16 -> 4.83:1      0.12 -> 5.19:1
+     *
+     * Ambang 4.5:1 ada di sekitar 0.195, jadi 0.16 dipilih supaya ada margin
+     * nyata dan tidak menggantungkan diri tepat di garis. Semua elemen lain
+     * jauh di atas ambang: daftar aturan 11.39:1, judul 14.75:1, eyebrow
+     * 7.48:1. Pengikatnya selalu paragraf lead, satu-satunya teks yang warnanya
+     * benar-benar redup (rgb(142,142,147), polos 6.07:1).
+     *
+     * Cara lain, yaitu scrim gelap di belakang teks, sudah diuji dan DITOLAK
+     * dengan angka: seluruh piksel cincin (13992 dari 13992) berada di dalam
+     * area yang ditutupi teks, jadi tidak ada zona kosong yang bisa dilindungi.
+     * Scrim hanya menghapus objek - di alpha 0.65 barulah teks lead mencapai
+     * 4.5:1. Memperkecil ukuran juga tidak menyelesaikan masalah, cuma menukar
+     * "terlalu terang" jadi "terlalu kecil".
+     *
+     * Yang dikorbankan di sini adalah TERANG, bukan UKURAN. Permintaannya
+     * "seukuran objek Hero" menyangkut ukuran, dan itu tetap terpenuhi penuh
+     * (luas extent 104% / 105% / 99% dari motif hero di 1440 / 1280 / 1024);
+     * cincin hanya diredupkan sampai bisa hidup berdampingan dengan teks di
+     * depannya. Konsekuensinya harus diketahui: pada latar sedekat hitam dengan
+     * teks terang, tidak ada opasitas yang sekaligus membuat cincin mencolok
+     * DAN menjaga teks di atas 4.5:1. Dua hal itu bertentangan secara
+     * struktural, bukan karena salah satu angka salah pilih.
+     */
+    opacity: 0.16;
     contain: layout paint;
   }
 
