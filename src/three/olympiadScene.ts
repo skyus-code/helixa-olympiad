@@ -305,6 +305,28 @@ export function createOlympiadScene(
 
   const disposables: Array<{ dispose(): void }> = [];
 
+  /*
+   * SATU SPRITE UNTUK KEDUA LAYER TITIK.
+   *
+   * Scene ini punya DUA `Points`: simpul icosahedron (12 titik) dan debu (520
+   * titik). Keduanya WAJIB memakai sprite bulat yang sama. Ini bukan
+   * konsistensi estetika saja - tanpa `map`, three.js menggambar tiap titik
+   * sebagai PERSEGI putih solid, jadi satu layer yang lupa sprite langsung
+   * muncul sebagai kotak-kotak di layar.
+   *
+   * Kenapa ini penting sekali di scene ini: simpul icosahedron berukuran
+   * 0.05, yaitu DUA KALI ukuran debu (0.025), dengan opacity 0.9 dan warna
+   * emas paling terang. Jadi 12 titik itu jauh lebih menonjol daripada 520
+   * butiran debu - persis yang paling cepat terlihat oleh mata. Memperbaiki
+   * debu saja akan meninggalkan 12 kotak yang paling menyebalkan.
+   *
+   * Dibuat sekali di sini, dipakai dua kali, dan di-`dispose` sekali. Texture
+   * tidak dialokasikan ulang, dan `disposables` tidak mendaftarkannya dua kali
+   * (memanggil `dispose` dua kali pada texture yang sama tidak merusak, tapi
+   * mendaftarkannya sekali saja lebih jujur).
+   */
+  const dotTex = makeDustSprite();
+
   // ---- dua benda ruang Platonic ----
   //
   // Geometri icosahedron disimpan terpisah (bukan diambil kembali dari
@@ -342,6 +364,11 @@ export function createOlympiadScene(
     transparent: true,
     opacity: 0.9,
     depthWrite: false,
+    // WAJIB. Tanpa baris ini, 12 titik simpul digambar sebagai persegi putih
+    // solid - dan karena ukurannya dua kali debu serta nearly opaque, mereka
+    // adalah bentuk kotak yang paling mencolok di seluruh halaman.
+    map: dotTex,
+    alphaTest: 0.01,
   });
   const nodes = new THREE.Points(nodeGeo, nodeMat);
   group.add(nodes);
@@ -387,8 +414,7 @@ export function createOlympiadScene(
   dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
   dustGeo.setAttribute('color', new THREE.BufferAttribute(dustColor, 3));
 
-  // Sprite bulat dihitung sekali, di sini juga - bukan saat render.
-  const dustTex = makeDustSprite();
+  // Sprite bulat yang sama dengan layer simpul, dibuat sekali di atas.
   const dustMat = new THREE.PointsMaterial({
     size: 0.025,
     sizeAttenuation: true,
@@ -397,12 +423,12 @@ export function createOlympiadScene(
     opacity: 0.6,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    map: dustTex,
+    map: dotTex,
     alphaTest: 0.01,
   });
   const dust = new THREE.Points(dustGeo, dustMat);
   scene.add(dust);
-  disposables.push(dustGeo, dustMat, dustTex);
+  disposables.push(dustGeo, dustMat, dotTex);
 
   // ---- state ----
   let time = 0;
