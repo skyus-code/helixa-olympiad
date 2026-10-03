@@ -181,16 +181,33 @@ export function Navbar() {
     <>
       <header
         className={
-          'fixed inset-x-0 top-0 z-[100] transition-[background-color,backdrop-filter,border-color] duration-500 ease-out ' +
+          'fixed z-[100] left-1/2 -translate-x-1/2 w-[calc(100%-1.5rem)] sm:w-[calc(100%-3rem)] max-w-5xl transition-all duration-700 ease-out ' +
+          'rounded-2xl sm:rounded-full ' +
           (scrolled && !open
-            ? 'border-b border-gold-line bg-ink/72 backdrop-blur-xl'
-            : 'border-b border-transparent bg-transparent')
+            ? 'top-3 sm:top-4 md:top-5 opacity-100 translate-y-0 scale-100 border border-gold-line bg-ink/75 backdrop-blur-2xl shadow-[0_16px_36px_-10px_rgba(0,0,0,0.8),0_0_24px_-4px_rgba(212,175,55,0.12),inset_0_1px_1px_rgba(255,255,255,0.18)]'
+            : 'top-1 sm:top-2 md:top-3 opacity-0 -translate-y-4 scale-[0.98] border border-transparent bg-transparent shadow-none')
         }
-        style={{ paddingTop: 'env(safe-area-inset-top)' }}
+        style={{ marginTop: 'env(safe-area-inset-top)' }}
       >
+        {/* Tekstur Glass reflection & highlights */}
+        <div
+          aria-hidden="true"
+          className={
+            'pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit] transition-opacity duration-700 ' +
+            (scrolled && !open ? 'opacity-100' : 'opacity-0')
+          }
+        >
+          {/* Garis refleksi cahaya specular di bibir atas kaca */}
+          <div className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+          {/* Kilau refleksi kaca dari atas ke bawah */}
+          <div className="absolute inset-0 bg-gradient-to-b from-white/[0.08] via-transparent to-transparent" />
+          {/* Refleksi emas halus di bibir bawah */}
+          <div className="absolute inset-x-12 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/25 to-transparent" />
+        </div>
+
         <nav
           aria-label="Navigasi utama"
-          className="shell flex h-16 items-center justify-between gap-4 md:h-18"
+          className="relative flex h-14 sm:h-16 items-center justify-between gap-4 px-4 sm:px-6 md:px-7"
         >
           <Wordmark />
 
@@ -200,7 +217,7 @@ export function Navbar() {
                 <li key={link.href}>
                   <a
                     href={link.href}
-                    className="nav-link inline-flex min-h-11 min-w-11 items-center justify-center px-1.5 text-[0.9375rem] font-medium text-bone/85 hover:text-bone"
+                    className="nav-link inline-flex min-h-11 min-w-11 items-center justify-center px-1.5 text-[0.9375rem] font-medium text-bone/85 transition-colors duration-200 hover:text-gold"
                   >
                     {link.label}
                   </a>
@@ -209,7 +226,7 @@ export function Navbar() {
             </ul>
             <a
               href={NAV_CTA.href}
-              className="btn btn-shimmer bg-gold-gradient inline-flex min-h-11 items-center justify-center rounded-full px-5 text-[0.875rem] font-semibold text-ink"
+              className="btn btn-shimmer bg-gold-gradient inline-flex min-h-11 items-center justify-center rounded-full px-5 text-[0.875rem] font-semibold text-ink shadow-[0_4px_16px_-4px_rgba(212,175,55,0.4)]"
             >
               {NAV_CTA.label}
             </a>
@@ -222,7 +239,7 @@ export function Navbar() {
             aria-expanded={open}
             aria-controls="menu-mobile"
             aria-label={open ? 'Tutup menu' : 'Buka menu'}
-            className="btn -mr-2 inline-flex h-11 w-11 items-center justify-center rounded-full md:hidden"
+            className="btn -mr-1 inline-flex h-11 w-11 items-center justify-center rounded-full text-gold md:hidden"
           >
             <MenuIcon open={open} />
           </button>
