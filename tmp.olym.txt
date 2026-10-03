@@ -270,8 +270,6 @@ export function createOlympiadScene(
     opacity: 0.6,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
-    map: dustTex,
-    alphaTest: 0.01,
   });
   const dust = new THREE.Points(dustGeo, dustMat);
   scene.add(dust);
