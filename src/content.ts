@@ -7,7 +7,25 @@
    TAUTAN — ganti "#" dengan URL asli.
    -------------------------------------------------------------------------- */
 
-export const REGISTER_URL = '#';
+/**
+ * Target semua tombol "Daftar".
+ *
+ * Dulu `REGISTER_URL = '#'`, jadi semua CTA itu tidak melakukan apa-apa -
+ * tautan yang terlihat seperti tombol tapi lead-nya buntu. Sekarang ia
+ * menunjuk ke route hash halaman form.
+ *
+ * Kenapa hash, bukan path: situs ini SPA statis tanpa rewrite server. Path
+ * `/pendaftaran` akan 404 begitu halaman itu di-refresh atau dibuka langsung,
+ * sedangkan hash selalu aman di hosting apa pun. Konsekuensinya, halaman ini
+ * bisa di-bookmark dan dibagikan seperti tautan section yang sudah dipakai
+ * situs ini.
+ *
+ * Hash ini WAJIB berbeda dari setiap `id` section di landing page. Alasannya
+ * ada di header `src/hooks/useHashRoute.ts`: hook smooth scroll akan
+ * menganggap hash yang dikenal sebagai anchor dan mencegahnya sebelum
+ * `hashchange` sempat terjadi.
+ */
+export const REGISTER_URL = '#pendaftaran';
 export const INSTAGRAM_URL = 'https://www.instagram.com/helixa.olim/?hl=en';
 
 /* --------------------------------------------------------------------------
@@ -217,6 +235,65 @@ export const FAQ = {
         'Belum. Mulai dari SMA agar kualitas matang, lalu diperluas bertahap.',
     },
   ],
+} as const;
+
+/* --------------------------------------------------------------------------
+   FORM PENDAFTARAN
+   -------------------------------------------------------------------------- */
+
+export const REGISTRATION = {
+  pageTitle: 'Form Pendaftaran · Helixa Olympiad',
+  eyebrow: 'Pendaftaran Perdana',
+  title: 'Formulir pendaftaran',
+  lead: 'Gratis untuk edisi Perdana, terbuka untuk siswa SMA/MA/SMK se-Indonesia. Isi data berikut dengan lengkap.',
+  /** Label + opsi pilihan. Nilai kosong = belum dipilih, bukan pilihan sah. */
+  fields: {
+    nama: { label: 'Nama lengkap', hint: 'Sesuai sertifikat.' },
+    sekolah: { label: 'Nama sekolah' },
+    kota: { label: 'Kota' },
+    kelas: {
+      label: 'Kelas',
+      options: ['X', 'XI', 'XII'],
+    },
+    jurusan: {
+      label: 'Sekolah',
+      options: ['SMA', 'MA', 'SMK'],
+    },
+    wa: { label: 'Nomor WhatsApp', hint: 'Dipakai untuk grup teknis ujian.' },
+    email: { label: 'Email', hint: 'Dipakai untuk mengumuman hasil.' },
+    bidangLabel: 'Bidang yang diikuti',
+    bidangOptions: ['Matematika', 'Biologi'],
+    setujuLabel: 'Saya sudah membaca Aturan & Transparansi dan menyetujui syaratnya.',
+  },
+  submitLabel: 'Kirim pendaftaran',
+  /**
+   * Keadaan jujur saat ini.
+   *
+   * Dua hal terjadi berurutan, dan keduanya perlu disebutkan:
+   *   1. Halaman ini belum punya backend. Tidak ada endpoint, tidak ada API,
+   *      tidak ada layanan formulir. Data yang diketik user tidak terkirim ke
+   *      mana pun: tidak disimpan di server kami, tidak sampai ke email siapa
+   *      pun, dan tidak tersimpan di perangkat kami.
+   *   2. Karena itu tombolnya tetap dinyalakan dan validasinya tetap jalan, tapi
+   *      hasilnya adalah ringkasan yang bisa disalin sendiri, disertai
+   *      peringatan yang sama jujurnya.
+   *
+   * Menyembunyikan kenyataan ini lebih cepat, tapi akibatnya user mengisi seluruh
+   * form, menekan tombol, lalu melihat "Berhasil!" padahal datanya hilang.
+   * Itu jauh lebih mahal daripada satu kalimat pengakuan.
+   *
+   * Nanti ketika backend-nya siap, tidak ada perubahan yang perlu dilakukan di
+   * komponen ini: cukup ganti isi pesan ini dan tambahkan pemanggilan kirim di
+   * satu tempat (lihat catatan di RegistrationPage.tsx).
+   */
+  notSentTitle: 'Belum dikirim ke mana pun',
+  notSentBody:
+    'Form ini sudah divalidasi, tapi pendaftaran belum dibuka: belum ada server yang menerima data. Yang tampil di bawah adalah ringkasan isian Anda - belum tersimpan di perangkat ini dan belum sampai ke siapa pun. Salin dan simpan sendiri, atau tunggu sampai pendaftaran dibuka.',
+  copyLabel: 'Salin ringkasan',
+  copiedLabel: 'Tersalin',
+  backLabel: 'Kembali ke halaman utama',
+  /** Judul ringkasan yang disalin beserta isian form. */
+  summaryHeading: 'Ringkasan pendaftaran',
 } as const;
 
 /* --------------------------------------------------------------------------

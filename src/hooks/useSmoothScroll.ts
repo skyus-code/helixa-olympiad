@@ -118,9 +118,25 @@ function pixelDelta(e: WheelEvent): number {
   return e.deltaY;
 }
 
-export function useSmoothScroll() {
+/**
+ * Interpolasi scroll untuk halaman utama.
+ *
+ * `onRoute` bernilai false mematikan hook ini sepenuhnya - bukan hanya
+ * stopping, tapi semua effect langsung dilewati. Dipakai halaman form: satu
+ * halaman yang isinya satu form, dengan sedikit baris yang bisa di-scroll, tidak
+ * ada manfaat dari interpolasi yang harus menyela setiap roda mouse, dan ticker
+ * GSAP yang terus berjalan selama form diisi adalah biaya yang tidak dibayar
+ * oleh apa pun yang terlihat.
+ *
+ * Catatan urutan: pemanggil harus memanggil hook ini SESUDAH hook yang menulis
+ * posisi scroll saat pindah halaman (`useHashRoute`). Effect dijalankan sesuai
+ * urutan deklarasi, jadi itu menjamin perpindahan halaman selesai menulis
+ * posisi dulu, baru ticker ini membaca `window.scrollY` sebagai keadaan awal -
+ * kalau terbalik, form yang baru terbuka mulai di posisi scroll halaman lama.
+ */
+export function useSmoothScroll(onRoute = true) {
   const mode = useMotionMode();
-  const enabled = mode === 'rich';
+  const enabled = onRoute && mode === 'rich';
 
   useEffect(() => {
     if (!enabled) return;

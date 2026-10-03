@@ -1,0 +1,401 @@
+/**
+ * Form Pendaftaran: benda ruang Platonic + debu partikel bergerak.
+ *
+ * PEMILIHAN BENTUK
+ * ----------------
+ * Dua objek 3D sudah dipakai situs ini: cincin armillary (Aturan) dan untai
+ * DNA (Hero). Forma untuk halaman form harus terbaca sebagai hal ketiga,
+ * bukan pengulangan salah satu dari keduanya. Yang dipakai di sini adalah
+ * **benda ruang Platonic** - icosahedron dan dodecahedron - karena:
+ *
+ *   - Polytope Platonic adalah lambang geometri klasik yang paling sering
+ *     muncul di identitas olimpiade matematika. Bentuknya langsung terbaca
+ *     sebagai "matematika", bukan "astronomi" (armillary) atau "biologi" (DNA).
+ *   - Site ini bidangnya adalah Matematika DAN Biologi. Benda ruang
+ *     menutup sisi matematikanya; sisi biologi sudah diwakili DNA di Hero.
+ *   - Bentuknya berbeda total dari dua yang sudah ada. Icosahedron punya
+ *     bidang datar dan sudut tajam; armillary butuh TORUS (tabung), DNA butuh
+ *    kurva sinus. Tidak ada tumpang tindih bentuk, jadi ketiga scene bisa
+ *     hidup berdampingan tanpa terlihat seperti tema yang sama diulang.
+ *
+ * Kenapa wireframe, bukan permukaan solid: bentuknya sudah dikenali dari
+ * garisnya. Permukaan solid butuh pencahayaan, dan pencahayaan pada benda
+ * berputar menghasilkan highlight yang berkedip di tempat berbeda setiap
+ * putaran - persis yang sudah dilarang di armillary. MeshBasicMaterial
+ * memberi warna emas konstan yang tenang dan murah.
+ *
+ * PARTIKELNYA DI DALAM SCENE YANG SAMA, BUKAN SCENE KEDUA
+ * -------------------------------------------------------
+ * Permintaan awal menyebut "3D object" dan "partikel-partikel". Kalau
+ * keduanya jadi dua scene terpisah, halaman ini punya DUA context WebGL dan
+ * DUA loop rAF yang tidak saling tahu. Debunya cukup dijadikan satu
+ * `THREE.Points` di scene yang sama: satu context, satu loop, satu
+ * IntersectionObserver, satu dispose. Pemisahan di sini akan menciptakan
+ * biaya yang tidak dibayar oleh apa pun yang terlihat.
+ *
+ * MODUL HANYA DIMUAT DI MODE 'rich'
+ * ---------------------------------
+ * `import()` dinamis dari OlympiadScene.tsx yang di-gate mode 'rich' dan
+ * hanya saat halaman form benar-benar terbuka. Di ponsel chunk three.js tidak
+ * pernah terunduh sama sekali - bukan sekadar tidak dieksekusi. Ini syarat
+ * yang sudah diukur di jaringan oleh verify.mjs untuk halaman utama, dan
+ * Kewajiban yang sama berlaku untuk halaman ini: tidak boleh memunculkan
+ * chunk three.js baru di mobile.
+ */
+
+import * as THREE from 'three';
+
+export interface OlympiadHandle {
+  setPaused(p: boolean): void;
+  dispose(): void;
+}
+
+/**
+ * Batas device pixel ratio.
+ *
+ * Scene ini memenuhi SELURUH viewport halaman form, jadi luasnya jauh lebih
+ * besar dari armillary yang cuma kotak persegi di tengah satu section. Tanpa
+ * batas ini, DPI 3 di ponsel premium akan menggambar empat kali lebih banyak
+ * piksel dari yang dibutuhkan untuk dua ratus partikel.
+ */
+const DPR_MAX = 2;
+
+/**
+ * `low-power`, sama seperti armillary.
+ *
+ * Scene ini tidak punya shader mahal: dua wireframe dan dua `Points`.
+ * Meminta GPU high-performance untuk itu hanya memindahkan rendering ke GPU diskret pada
+ * laptop yang tidak butuh, dan menguras baterai dengan tidak ada gunanya.
+ */
+const POWER = 'low-power';
+
+/** Emas wireframe, sama dengan emas wireframe armillary. */
+const GOLD = new THREE.Color('#D4AF37');
+const GOLD_BRIGHT = new THREE.Color('#F6E7B4');
+
+/**
+ * Benda dalam, langsam. Icosahedron berputar satu arah, dodecahedron arah
+ * sebaliknya: dua gerak berlawanan pada dua sumbu membuat bentuknya tidak
+ * pernah terlihat berputar sebagai satu benda utuh, sehingga tidak ada pola
+ * berulang yang mudah ditebak mata (persis alasan RINGS di armillary disebar
+ * ke empat sumbu).
+ */
+const SOLID_A = { radius: 1.0, detail: 0, tilt: 0.22, speed: 0.22, opacity: 0.5, color: GOLD };
+const SOLID_B = {
+  radius: 0.62,
+  detail: 0,
+  tilt: -0.6,
+  speed: -0.34,
+  opacity: 0.42,
+  color: GOLD_BRIGHT,
+};
+
+/**
+ * Radius untuk fitting kamera.
+ *
+ * Benda luar (SOLID_A) tepat 1.0, dan `wireframe` pada polyhedron memotong
+ * tepat di rusuknya, jadi tidak ada pinggiran yang perlu ditutup di sini -
+ * berbeda dari torus yang polygon's edge-nya keluar sedikit dari radius ideal.
+ * 1.12 memberi ruang kosong 12% supaya tilt tidak pernah menyinggung tepi.
+ */
+const FIT_RADIUS = 1.12;
+const FIT_MARGIN = 1.14;
+
+/** Titik emas di setiap simpul icosahedron: 12 titik, bentuk yang instantly terbaca. */
+const NODE_SIZE = 0.05;
+
+/**
+ * Jumlah debu partikel.
+ *
+ * Angka 260 dipilih supaya layer ini terbaca sebagai "udara" yang bergerak,
+ * bukan sebagai bintang. Terlalu sedikit (di bawah ~120) tidak terlihat
+ * bergerak sama sekali; terlalu banyak (di atas ~500) berubah jadi kabut padat
+ * yang menutupi wireframe dan, yang lebih penting, memakan waktu frame pada
+ * perangkat yang sudah harus menggambar dua scene lain.
+ */
+const DUST_COUNT = 520;
+
+/**
+ * Volume debu, sebagai setengah-extent di unit dunia.
+ *
+ * Sengaja lebih besar daripada bidang pandang kamera: debu yang keluar kanvas
+ * bukan bug, itu yang membuatnya terasa seperti ruang yang luas. Yang penting
+ Layer ini tidak bolong di tengah - jadi tiap partikel selalu punya tekstur
+ * di sekelilingnya, bahkan di layar 320px yang bidang pandangnya sempit.
+ */
+const DUST = { x: 3.6, y: 2.8, z: 2.0 } as const;
+
+/** Kecepatan naik partikel (unit dunia per detik) dan ayunan horizontalnya. */
+const DUST_RISE = 0.16;
+const DUST_SWAY = 0.42;
+const DUST_SWAY_SPEED = 0.28;
+
+/**
+ * Kumpulkan simpul unik dari polyhedron.
+ *
+ * `IcosahedronGeometry` mengembalikan BufferGeometry TANPA index, jadi setiap
+ * rusuk dipecah jadi dua segitiga dan simpul yang sama muncul beberapa kali di
+ * array posisi. Kalau dipakai apa adanya, 12 simpul akan jadi 60 titik yang
+ * bertumpuk persis di atas satu sama lain - tidak salah secara visual, tapi
+ * attribute-nya berisi data yang salah dan buahnya terbuang.
+ *
+ * Pembulatan ke 4 desimal dipakai sebagai kunci. Luas toleransinya jauh lebih
+ * kecil daripada jarak antar simpul icosahedron (sekitar 1,05 unit), jadi ini
+ * tidak pernah salah menggabungkan dua simpul berbeda.
+ */
+function uniqueVertices(geo: THREE.BufferGeometry): Float32Array {
+  const pos = geo.getAttribute('position');
+  const seen = new Set<string>();
+  const out: number[] = [];
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const key =
+      Math.round(x * 1e4) + ':' + Math.round(y * 1e4) + ':' + Math.round(z * 1e4);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(x, y, z);
+  }
+  return new Float32Array(out);
+}
+
+export function createOlympiadScene(
+  canvas: HTMLCanvasElement,
+  opts: { reduced?: boolean } = {},
+): OlympiadHandle {
+  const reduced = opts.reduced === true;
+
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    alpha: true,
+    powerPreference: POWER,
+    // Wajib: bukti piksel pada halaman ini diambil lewat drawImage +
+    // getImageData di dalam halaman, dan `Page.captureScreenshot` di Chrome
+    // headless TIDAK menangkap layer WebGL sama sekali. Tanpa preserve buffer,
+    // verify.mjs akan melihat kanvas kosong dan melaporkan objek gagal.
+    preserveDrawingBuffer: true,
+  });
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
+  camera.position.set(0, 0, 4.2);
+  camera.lookAt(0, 0, 0);
+
+  const group = new THREE.Group();
+  scene.add(group);
+
+  const disposables: Array<{ dispose(): void }> = [];
+
+  // ---- dua benda ruang Platonic ----
+  //
+  // Geometri icosahedron disimpan terpisah (bukan diambil kembali dari
+  // `group.children[0]`) karena simpul-simpulnya dibutuhkan untuk layer titik
+  // di bawah. `children` bertipe `Object3D[]`, jadi `.geometry` tidak ada di
+  // tipe itu - menyimpan referensinya di sini juga lebih jelas urutan buildup.
+  const icosaGeo = new THREE.IcosahedronGeometry(SOLID_A.radius, SOLID_A.detail);
+  for (const spec of [SOLID_A, SOLID_B]) {
+    const geo =
+      spec === SOLID_A
+        ? icosaGeo
+        : new THREE.DodecahedronGeometry(spec.radius, spec.detail);
+    const mat = new THREE.MeshBasicMaterial({
+      color: spec.color,
+      wireframe: true,
+      transparent: true,
+      opacity: spec.opacity,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = spec.tilt;
+    mesh.rotation.y = spec.tilt * 0.5;
+    mesh.userData.speed = spec.speed;
+    group.add(mesh);
+    disposables.push(geo, mat);
+  }
+
+  // ---- titik di simpul icosahedron ----
+  const nodeGeo = new THREE.BufferGeometry();
+  nodeGeo.setAttribute('position', new THREE.BufferAttribute(uniqueVertices(icosaGeo), 3));
+  const nodeMat = new THREE.PointsMaterial({
+    color: GOLD_BRIGHT,
+    size: NODE_SIZE,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: 0.9,
+    depthWrite: false,
+  });
+  const nodes = new THREE.Points(nodeGeo, nodeMat);
+  group.add(nodes);
+  disposables.push(nodeGeo, nodeMat);
+
+  // ---- debu partikel ----
+  //
+  // `dustBaseX` menyimpan posisi awal partikel. Ini bukan penghematan, tapi
+  // perbaikan: versi pertama langsung menambah simpangan sinus ke X yang
+  // sekarang setiap frame. Itu random walk - tiap partikel bergerak acak dan
+  // setelah beberapa menit sebagian besar sudah keluar volume, jadi "lapisan
+  // debu" tinggal jadi rintisan di satu sudut. Menyimpan posisi awal membuat
+  // ayunan SELALU di sekitar titik yang sama, dan karena itu mesmerinya
+  // berulang tapi tidak pernah menyimpang.
+  const dustGeo = new THREE.BufferGeometry();
+  const dustPos = new Float32Array(DUST_COUNT * 3);
+  const dustColor = new Float32Array(DUST_COUNT * 3);
+  const dustBaseX = new Float32Array(DUST_COUNT);
+  const dustSeed = new Float32Array(DUST_COUNT);
+  const c = new THREE.Color();
+  for (let i = 0; i < DUST_COUNT; i++) {
+    const x = (Math.random() * 2 - 1) * DUST.x;
+    dustPos[i * 3] = x;
+    dustPos[i * 3 + 1] = (Math.random() * 2 - 1) * DUST.y;
+    dustPos[i * 3 + 2] = (Math.random() * 2 - 1) * DUST.z;
+    dustBaseX[i] = x;
+    // Campuran dua emas supaya layer tidak terlihat satu warna datar.
+    c.copy(GOLD).lerp(GOLD_BRIGHT, Math.random() * 0.7);
+    dustColor[i * 3] = c.r;
+    dustColor[i * 3 + 1] = c.g;
+    dustColor[i * 3 + 2] = c.b;
+    // Fase ayunan per partikel, supaya geraknya tidak serempak.
+    dustSeed[i] = Math.random() * Math.PI * 2;
+  }
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+  dustGeo.setAttribute('color', new THREE.BufferAttribute(dustColor, 3));
+
+  const dustMat = new THREE.PointsMaterial({
+    size: 0.035,
+    sizeAttenuation: true,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const dust = new THREE.Points(dustGeo, dustMat);
+  scene.add(dust);
+  disposables.push(dustGeo, dustMat);
+
+  // ---- state ----
+  let time = 0;
+  let paused = false;
+  let disposed = false;
+  let raf = 0;
+
+  function resize() {
+    const w = canvas.clientWidth || canvas.parentElement?.clientWidth || 1;
+    const h = canvas.clientHeight || canvas.parentElement?.clientHeight || 1;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, DPR_MAX));
+    renderer.setSize(w, h, false);
+
+    const aspect = w / Math.max(1, h);
+
+    /*
+     * JARAK KAMERA DIHITUNG DARI FIT, BUKAN FIXED.
+     *
+     * Pola yang sama seperti armillary, dan alasannya sama: `PerspectiveCamera`
+     * memakai fov VERTIKAL, jadi kanvas yang lebih lebar daripada tingginya
+     *justru lebih sempit ke arah x. Distance fixed membuat salah satu sumbu
+     * terpotong, dan gejalanya tidak selalu kelihatan - bagian yang hilang
+     * cuma sedikit, dan selalu hilang di tempat yang sama, jadi terlihat
+     * seperti disengaja.
+     *
+     * `Math.max` dipakai karena yang dicari adalah jarak TERJauh dari dua
+     * sumbu: jarak yang cukup untuk sumbu yang lebih ketat otomatis cukup
+     * untuk yang lain.
+     */
+    const halfFovV = (camera.fov * Math.PI) / 360;
+    const need = FIT_RADIUS * FIT_MARGIN;
+    const distForHeight = need / Math.tan(halfFovV);
+    const halfFovH = Math.atan(Math.tan(halfFovV) * aspect);
+    const distForWidth = need / Math.tan(halfFovH);
+    camera.position.set(0, 0, Math.max(distForHeight, distForWidth));
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+  }
+
+  const ro = new ResizeObserver(resize);
+  ro.observe(canvas);
+  resize();
+
+  function frame() {
+    raf = requestAnimationFrame(frame);
+    time += 1 / 60;
+
+    for (const child of group.children) {
+      const speed = (child.userData as { speed?: number }).speed ?? 0;
+      if (speed === 0) continue;
+      child.rotation.y += speed / 60;
+      child.rotation.z += speed / 90;
+    }
+    // Denyut pelan, sama seperti armillary: dengan pergeseran kecil supaya
+    // bentuknya tidak terlihat seperti roda yang berputar di tempat.
+    group.rotation.y = Math.sin(time * 0.16) * 0.18;
+    group.rotation.x = Math.sin(time * 0.11) * 0.08;
+
+    // Debu naik perlahan dan membungkus diri sendiri saat melewati batas atas,
+    // jadi tidak pernah ada bingkai wherein partikel terlihat meloncat.
+    const p = dustGeo.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < DUST_COUNT; i++) {
+      let y = p.getY(i) + DUST_RISE / 60;
+      if (y > DUST.y) y = -DUST.y;
+      p.setY(i, y);
+      p.setX(i, dustBaseX[i] + Math.sin(time * DUST_SWAY_SPEED + dustSeed[i]) * DUST_SWAY);
+    }
+    p.needsUpdate = true;
+
+    renderer.render(scene, camera);
+  }
+
+  if (reduced) {
+    // Reduced-motion: satu frame statis. Bentuk dan debu tetap terlihat.
+    renderer.render(scene, camera);
+  } else {
+    raf = requestAnimationFrame(frame);
+  }
+
+  // Jeda saat tab disembunyikan. Perhatikan syaratnya: hanya boleh MENYALAKAN
+  // loop kalau sebelumnya benar-benar sedang paused. Versi armillary sempat punya
+  // tanda hubung terbalik di sini dan gejalanya baru muncul setelah listener
+  // dihapus - jangan diulang.
+  const onVis = () => {
+    if (disposed) return;
+    if (document.hidden) {
+      if (paused) return;
+      paused = true;
+      cancelAnimationFrame(raf);
+      raf = 0;
+    } else if (paused) {
+      paused = false;
+      raf = requestAnimationFrame(frame);
+    }
+  };
+  document.addEventListener('visibilitychange', onVis);
+
+  return {
+    setPaused(p) {
+      if (disposed || reduced) return;
+      if (p && !paused) {
+        paused = true;
+        cancelAnimationFrame(raf);
+        raf = 0;
+      } else if (!p && paused) {
+        paused = false;
+        raf = requestAnimationFrame(frame);
+      }
+    },
+    dispose() {
+      if (disposed) return;
+      disposed = true;
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      document.removeEventListener('visibilitychange', onVis);
+      ro.disconnect();
+      for (const d of disposables) d.dispose();
+      renderer.dispose();
+      // WAJIB. `forceContextLoss` membunuh context untuk selamanya di elemen
+      // canvas yang sama, jadi canvas yang dilepas harus ikut dibuang oleh
+      // React (lewat `key` yang berubah) sebelum scene baru dibangun.
+      renderer.forceContextLoss();
+    },
+  };
+}

@@ -66,6 +66,16 @@
   --color-bone: #f4efe4;
   --color-bone-dim: #8e8e93;
 
+  /* Satu-satunya warna di luar palet obsidian-emas-tiga huruf besar ini.
+     Dipakai HANYA untuk keadaan gagal: border input yang salah dan teks pesan
+     kesalahannya. Alasannya praktis, bukan estetik - kalau gagal ditandai dengan
+     emas seperti sisanya, satu-satunya pembeda yang tersisa adalah ketebalan
+     garis, dan itu tidak terbaca oleh orang yang buta warna maupun oleh
+     pengguna layar OLED yang viewing-nya sangat redup. Terracotta dipakai karena
+     masih satu keluarga dengan emas, jadi paletnya tidak dibuka jadi warna
+     keempat yang berdiri sendiri. */
+  --color-alert: #e8734a;
+
   /* Garis / border */
   --color-gold-line: rgba(212, 175, 55, 0.16);
   --color-gold-line-strong: rgba(212, 175, 55, 0.34);
@@ -634,6 +644,212 @@
      */
     opacity: 0.16;
     contain: layout paint;
+  }
+
+/* ---- Form Pendaftaran ---------------------------------------------------- */
+  /* Semua aturan untuk halaman form berdiri di satu tempat, supaya tidak ada
+     gaya form yang bocor ke komponen sebagai utility class yang tidak jelas
+     asalnya.
+
+     KOTAK FORM: LEGIBILITAS DIJAMIN ARSITEKTUR, BUKAN OLEH ANGKA
+     --------------------------------------------------------------
+     Bandingkan dengan `.rules-gyro` di atas. Di sana armillary memang
+     melintas di belakang teks, dan karena itu opasitasnya harus diturunkan ke
+     0,16 - angka hasil sapuan 300 bingkai - hanya supaya rasio kontras teks
+     `lead` tetap 4,83:1. Di sini pengorbanan seperti itu tidak diperlukan:
+     `.register-card` punya latar sendiri dengan alpha 0,94, sehingga rasio
+     kontras teks di atas field tidak bergantung pada apa pun yang kebetulan
+     sedang berputar di belakangnya. Yang bergerak (wireframe, simpul, debu)
+     justru terlihat di area di luar kartu, tempat tidak ada teks yang harus
+     dijaga. */
+
+  .register-wrap {
+    background-color: var(--color-ink);
+    /* Cahaya emas statis, CSS murni. Melakukan pekerjaan yang sama seperti
+       gradient ambient di blok hero, supaya halaman form punya kedalaman yang
+       sama persis bahkan ketika scene WebGL tidak ada - yaitu di mode
+       'simple', yang justru mode yang dipakai semua ponsel. */
+    background-image:
+      radial-gradient(
+        ellipse 70% 55% at 50% 42%,
+        rgba(212, 175, 55, 0.13) 0%,
+        rgba(212, 175, 55, 0.05) 45%,
+        rgba(212, 175, 55, 0) 75%
+      ),
+      radial-gradient(
+        ellipse 50% 40% at 82% 88%,
+        rgba(212, 175, 55, 0.07) 0%,
+        rgba(212, 175, 55, 0) 70%
+      );
+  }
+
+  .register-card {
+    /* Alpha 0,94 dipilih dari hasil hitung, bukan dari preference. Kompositasi
+       6% emas terang penuh (#f6e7b4) di atas #0a0a0b menghasilkan
+       rgb(24, 24, 25); di atas warna itulah rasio tersempit di dalam kartu ini
+       tetap 5,55:1, yaitu warna `bone-dim`. Menurunkan alpha lebih jauh
+       menaikkan rasio, tapi alpha tidak boleh turun di bawah 0,9 karena blur
+       backdrop ikut kehilangan batas kartu dan bentuknya berubah jadi kotak
+       gelap tanpa sisi. Dipakai titik tengahnya, yaitu 0,94. */
+    background-color: rgb(10 10 11 / 0.94);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow:
+      0 0 0 1px rgb(212 175 55 / 0.06),
+      0 30px 80px -32px rgb(0 0 0 / 0.9),
+      0 0 90px -50px rgb(212 175 55 / 0.35);
+  }
+
+  /* ---- Field ---------------------------------------------------------------
+     Tinggi minimum 46px. Syarat tap target WCAG 2.5.8 adalah 24px dan ukuran
+     ini lolos jauh di atasnya, tapi angka itu ditulis untuk target yang
+     jaraknya tidak bertetangga. Input dipakai mengetik dengan dua tangan, dan
+     baris input yang terlalu pendek membuat jari sering mendarat di baris
+     sebelah - itu kesalahan ketik, bukan sekadar lambat mengetik. */
+
+  .field {
+    display: block;
+    width: 100%;
+    min-height: 2.875rem;
+    /* `min-width: 0` sudah berlaku dari base `* { min-width: 0 }`, jadi field
+       ini tidak memaksa kolom grid melebar ketika isian panjang diketik. */
+    border-radius: 0.75rem;
+    border: 1px solid var(--color-gold-line-strong);
+    background-color: rgb(6 6 7 / 0.72);
+    color: var(--color-bone);
+    /* 1rem, bukan 0,9375rem. Ini bukan detail tipografi: Safari membesarkan
+       teks di dalam input yang font-nya di bawah 16px saat halaman dalam
+       keadaan zoom, dan `maximum-scale=1` tidak boleh dipakai karena mematikan
+       zoom adalah kemunduran aksesibilitas. 1rem juga membuat ukuran teks field
+       sama dengan body, jadi mata tidak perlu berpindah skala saat mengisi
+       form panjang. */
+    font-size: 1rem;
+    line-height: 1.5;
+    padding: 0.625rem 0.875rem;
+    transition:
+      border-color var(--dur-hover, 300ms) ease-out,
+      box-shadow var(--dur-hover, 300ms) ease-out,
+      background-color var(--dur-hover, 300ms) ease-out;
+    appearance: none;
+  }
+
+  .field::placeholder {
+    color: var(--color-bone-dim);
+    /* Placeholder bukan label, jadi teksnya memang boleh lebih redup. Opasitas
+       diturunkan sedikit saja: `bone-dim` polos di atas #060607 sudah 5,9:1,
+       jadi yang dikorbankan di sini hanya sisa headroom yang paling longgar
+       di kartu ini. */
+    opacity: 0.72;
+  }
+
+  .field:hover {
+    border-color: rgb(212 175 55 / 0.34);
+  }
+
+  .field:focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+    border-color: var(--color-gold);
+    background-color: rgb(6 6 7 / 0.85);
+  }
+
+  /* Selector-nya `aria-invalid`, bukan kelas yang ditambahkan dari JS. Sumber
+     kebenaran untuk "field ini salah" adalah atribut yang sama persis dengan
+     yang dibaca screen reader, jadi tidak mungkin keduanya berbeda. */
+  .field[aria-invalid='true'] {
+    border-color: var(--color-alert);
+  }
+
+  .field[aria-invalid='true']:focus-visible {
+    outline-color: var(--color-alert);
+    border-color: var(--color-alert);
+  }
+
+  /* Panah `<select>` digambar sendiri. Bawaan platform digambar dengan warna
+     teks elemen, jadi di atas latar gelap hampir tidak terlihat, dan di
+     sebagian tema gelap sistem ia justru mengirim gambar terang di atas
+     terang. Gambar di bawah memakai token emas supaya ikut berubah kalau
+     palet diubah. */
+  select.field {
+    padding-right: 2.5rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%23d4af37' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5 6 6.5l5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.9375rem center;
+    background-size: 0.75rem 0.5rem;
+  }
+
+  select.field option {
+    background-color: var(--color-ink-deep);
+    color: var(--color-bone);
+  }
+
+  .field-error {
+    margin-top: 0.25rem;
+    /* 0,8125rem: pesan kesalahan boleh sedikit lebih kecil dari label, tapi
+       tidak setipis teks 0,75rem yang dipakai untuk hint di atas field. Dua
+       kelas ukuran yang berbeda dalam satu field membuat yang paling kecil
+       terbaca sebagai hiasan, dan ini justru pesan yang paling penting. */
+    font-size: 0.8125rem;
+    line-height: 1.4;
+    color: var(--color-alert);
+  }
+
+  /* Checkbox native + `accent-color`, bukan gambar sendiri. Alasannya
+     aksesibilitas datang gratis: tanda centang bawaan platform selalu terbaca
+     karena dibuat berbeda bentuk, bukan hanya berbeda warna; ia mengikuti mode
+     gelap sistem; dan perilaku keyboard-nya sudah diuji lama oleh semua
+     browser. Gambar kustom selalu menyalin salah satu dari tiga hal itu, dan
+     biasanya ketiganya. */
+  .field-check {
+    width: 1.25rem;
+    height: 1.25rem;
+    flex: none;
+    margin: 0;
+    accent-color: var(--color-gold);
+    cursor: pointer;
+  }
+
+  .field-check[aria-invalid='true'] {
+    outline: 1px solid var(--color-alert);
+    outline-offset: 2px;
+  }
+
+  /* Pilihan bidang (Matematika / Biologi) sebagai kapsul. `:has()` dipakai
+     supaya keadaan terpilih dibaca dari input aslinya - satu sumber kebenaran,
+     sama seperti `.field[aria-invalid]` di atas. */
+  .field-choice {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+    padding: 0.5rem 1.125rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-gold-line-strong);
+    background-color: rgb(6 6 7 / 0.6);
+    color: var(--color-bone-dim);
+    font-size: 0.9375rem;
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+    transition:
+      color var(--dur-hover, 300ms) ease-out,
+      border-color var(--dur-hover, 300ms) ease-out,
+      background-color var(--dur-hover, 300ms) ease-out;
+  }
+
+  .field-choice:hover {
+    border-color: rgb(212 175 55 / 0.34);
+    color: var(--color-bone);
+  }
+
+  .field-choice:has(:checked) {
+    border-color: var(--color-gold);
+    background-color: rgb(212 175 55 / 0.12);
+    color: var(--color-gold-bright);
+  }
+
+  .field-choice:has(:focus-visible) {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
   }
 
   /* ---- Heliks DNA SVG (fallback mode simple/reduced) ---------------------- */
