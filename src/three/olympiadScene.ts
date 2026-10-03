@@ -107,41 +107,45 @@ const FIT_MARGIN = 1.14;
  * Dulu 0.05 unit dunia dengan `sizeAttenuation: true`. Sekarang pixel - dan
  * alasannya bukan selera, tapi rasterisasi. three.js menghitung
  *
- *   gl_PointSize = size * pixelRatio * (viewportHeight / 2) / distance
+ *   gl_PointSize = size * pixelRatio * (height / 2) / distance
  *
- * (lihat `refreshUniformsPoints` + shader `points_vert`). Tiga konsekuensi,
- * semuanya nyata di layar ini:
+ * (lihat `refreshUniformsPoints` + shader `points_vert`).
  *
- *   1. Ukuran partikel SEBANDING dengan tinggi viewport. Jendela pendek
- *      menyusutkan semua partikel, padahal isi scene tidak berubah sama
- *      sekali pun.
- *   2. Sebaliknya, partikel yang jauh (debu paling belakang) tetap kecil
- *      di viewport besar.
- *   3. Di bawah ~5 px, sprite bulat tidak lagi bisa membulat: disk 3x3 piksel
- *      rasterisasi menjadi blok penuh. Diukur di halaman `#pendaftaran`,
- *      gumpalan 2-3 px punya fillRatio 0,83-0,86 (persegi) sementara 6 px
- *      ke atas turun ke 0,74-0,78 (pi/4 = 0,785, lingkaran).
+ * `height` di situ adalah tinggi buffer render, yaitu tinggi elemen canvas -
+ * bukan tinggi jendela browser. Di `#pendaftaran` canvas itu setinggi section
+ * (1226px terukur) dan tidak ikut menyusut saat jendela diperpendek. Jadi
+ * satu-satunya yang menentukan besar-kecil partikel adalah `distance`.
+ *
+ * Jaraknya tidak seragam: kamera di z = 3,71, sementara volume debu mengisi
+ * z = +/-2, x = +/-3,6, y = +/-2,8. Satu butiran bisa berjarak 1,71 (debu
+ * paling dekat) sampai 7,31 (sudut paling jauh) - rentang 4,3 kali. Pada
+ * `size` 0,025 itu berarti 9,0 px sampai 2,1 px.
+ *
+ * Dan 2 px itulah akar masalahnya. Di bawah ~5 px sprite bulat tidak lagi
+ * bisa membulat: disk 3x3 piksel rasterisasi menjadi blok penuh. Diukur di
+ * halaman, gumpalan 2-3 px punya fillRatio 0,83-0,86 (persegi) sementara
+ * 6 px ke atas turun ke 0,74-0,78 (pi/4 = 0,785, lingkaran).
  *
  * Makanya `sizeAttenuation` dimatikan untuk kedua layer titik: dengan begitu
  * `size` dibaca sebagai pixel CSS, jadi ukurannya dijamin sama di semua
  * perangkat. Persepsi kedalaman tidak hilang - ia dipindah ke
  * `DUST_FAR_DIM`, yang meredupkan butiran sesuai jaraknya.
  *
- * 9 px dipilih karena jauh di atas ambang 5 px, jadi setiap simpul selalu
- * terbaca sebagai bola, bukan kotak.
+ * 9 px dipilih karena jauh di atas ambang 5 px. Ukuran lama simpul sebenarnya
+ * sudah 7,9 px (jaraknya tetap sekitar 3,87), jadi penampilannya nyaris tidak
+ * berubah - yang berubah hanya bentuknya: dulu persegi, sekarang bola.
  */
 const NODE_SIZE = 9;
 
 /**
  * Ukuran satu butiran debu, dalam PIXEL CSS.
  *
- * Sama seperti `NODE_SIZE`: pixel, bukan unit dunia, supaya tidak ikut
- * menyusut saat jendela pendek dan tidak pernah jatuh ke bawah ambang
- * rasterisasi. 6 px sedikit di atas rata-rata ukuran lama di viewport
- * desktop (0,025 * 613 / 3,71 = 4,1 px), jadi penampilannya masih dekat
- * dengan sebelumnya, tapi sekarang dijamin tidak pernah turun ke 2-3 px
- * yang terbaca kotak. Diukur di halaman, gumpalan 6-8 px selalu persis
- * di regime lingkaran (fillRatio 0,72-0,78, tanpa satu pun persegi).
+ * Sama seperti `NODE_SIZE`: pixel, bukan unit dunia, supaya tidak pernah
+ * jatuh ke bawah ambang rasterisasi. 6 px berdiri di tengah rentang lama
+ * (9,0 px untuk debu terdekat, 2,1 px untuk yang terjauh), jadi yang paling
+ * banyak berubah adalah ujung terjauh - dan itu justru yang tadinya terbaca
+ * kotak. Diukur di halaman, gumpalan 6-8 px selalu persis di regime
+ * lingkaran (fillRatio 0,72-0,78, tanpa satu pun persegi).
  *
  * Yang paling butuh lantai ukuran ini adalah butiran paling belakang:
  * paling redup DAN paling lambat bergerak di layar, sebab gerak sebuah
@@ -409,10 +413,10 @@ export function createOlympiadScene(
     size: NODE_SIZE,
     // WAJIB false. Alasannya: layer simpul inilah yang bergerak paling pelan
     // di scene - tidak punya `userData.speed`, jadi hanya ikut denyut `group`
-    // pada 0,16 rad/s. Dengan `true`, ukurannya ikut mengecil saat jendela
-    // pendek, sehingga partikel yang paling lambat justru yang paling cepat
-    // terbaca kotak. Dengan `false`, `size` dibaca sebagai pixel dan tidak
-    // pernah turun ke bawah ambang rasterisasi.
+    // pada 0,16 rad/s. Dengan `true`, ukurannya tetap proporsional terhadap
+    // jarak, sehingga partikel paling lambat itu juga yang paling berisiko
+    // jatuh ke bawah ambang rasterisasi dan terbaca kotak. Dengan `false`,
+    // `size` dibaca sebagai pixel dan ukurannya pasti.
     sizeAttenuation: false,
     transparent: true,
     opacity: 0.9,
