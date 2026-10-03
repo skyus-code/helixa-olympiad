@@ -101,8 +101,55 @@ const SOLID_B = {
 const FIT_RADIUS = 1.12;
 const FIT_MARGIN = 1.14;
 
-/** Titik emas di setiap simpul icosahedron: 12 titik, bentuk yang instantly terbaca. */
-const NODE_SIZE = 0.05;
+/**
+ * Ukuran titik simpul icosahedron, dalam PIXEL CSS.
+ *
+ * Dulu 0.05 unit dunia dengan `sizeAttenuation: true`. Sekarang pixel - dan
+ * alasannya bukan selera, tapi rasterisasi. three.js menghitung
+ *
+ *   gl_PointSize = size * pixelRatio * (viewportHeight / 2) / distance
+ *
+ * (lihat `refreshUniformsPoints` + shader `points_vert`). Tiga konsekuensi,
+ * semuanya nyata di layar ini:
+ *
+ *   1. Ukuran partikel SEBANDING dengan tinggi viewport. Jendela pendek
+ *      menyusutkan semua partikel, padahal isi scene tidak berubah sama
+ *      sekali pun.
+ *   2. Sebaliknya, partikel yang jauh (debu paling belakang) tetap kecil
+ *      di viewport besar.
+ *   3. Di bawah ~5 px, sprite bulat tidak lagi bisa membulat: disk 3x3 piksel
+ *      rasterisasi menjadi blok penuh. Diukur di halaman `#pendaftaran`,
+ *      gumpalan 2-3 px punya fillRatio 0,83-0,86 (persegi) sementara 6 px
+ *      ke atas turun ke 0,74-0,78 (pi/4 = 0,785, lingkaran).
+ *
+ * Makanya `sizeAttenuation` dimatikan untuk kedua layer titik: dengan begitu
+ * `size` dibaca sebagai pixel CSS, jadi ukurannya dijamin sama di semua
+ * perangkat. Persepsi kedalaman tidak hilang - ia dipindah ke
+ * `DUST_FAR_DIM`, yang meredupkan butiran sesuai jaraknya.
+ *
+ * 9 px dipilih karena jauh di atas ambang 5 px, jadi setiap simpul selalu
+ * terbaca sebagai bola, bukan kotak.
+ */
+const NODE_SIZE = 9;
+
+/**
+ * Ukuran satu butiran debu, dalam PIXEL CSS.
+ *
+ * Sama seperti `NODE_SIZE`: pixel, bukan unit dunia, supaya tidak ikut
+ * menyusut saat jendela pendek dan tidak pernah jatuh ke bawah ambang
+ * rasterisasi. 6 px sedikit di atas rata-rata ukuran lama di viewport
+ * desktop (0,025 * 613 / 3,71 = 4,1 px), jadi penampilannya masih dekat
+ * dengan sebelumnya, tapi sekarang dijamin tidak pernah turun ke 2-3 px
+ * yang terbaca kotak. Diukur di halaman, gumpalan 6-8 px selalu persis
+ * di regime lingkaran (fillRatio 0,72-0,78, tanpa satu pun persegi).
+ *
+ * Yang paling butuh lantai ukuran ini adalah butiran paling belakang:
+ * paling redup DAN paling lambat bergerak di layar, sebab gerak sebuah
+ * partikel di layar berbanding 1/jarak. Dengan `sizeAttenuation: true`
+ * mereka justru yang paling kecil - jadi partikel paling pelan adalah
+ * partikel paling kotak. `false` menutup celah itu. Lihat `NODE_SIZE`.
+ */
+const DUST_SIZE = 6;
 
 /**
  * Jumlah debu partikel.
@@ -360,7 +407,13 @@ export function createOlympiadScene(
   const nodeMat = new THREE.PointsMaterial({
     color: GOLD_BRIGHT,
     size: NODE_SIZE,
-    sizeAttenuation: true,
+    // WAJIB false. Alasannya: layer simpul inilah yang bergerak paling pelan
+    // di scene - tidak punya `userData.speed`, jadi hanya ikut denyut `group`
+    // pada 0,16 rad/s. Dengan `true`, ukurannya ikut mengecil saat jendela
+    // pendek, sehingga partikel yang paling lambat justru yang paling cepat
+    // terbaca kotak. Dengan `false`, `size` dibaca sebagai pixel dan tidak
+    // pernah turun ke bawah ambang rasterisasi.
+    sizeAttenuation: false,
     transparent: true,
     opacity: 0.9,
     depthWrite: false,
@@ -416,8 +469,12 @@ export function createOlympiadScene(
 
   // Sprite bulat yang sama dengan layer simpul, dibuat sekali di atas.
   const dustMat = new THREE.PointsMaterial({
-    size: 0.025,
-    sizeAttenuation: true,
+    size: DUST_SIZE,
+    // WAJIB false, sama alasannya dengan `nodeMat`: butiran yang paling jauh
+    // adalah yang paling lambat bergerak di layar, dan dengan `true` mereka
+    // juga yang paling kecil - jadi partikel paling pelan justru yang paling
+    // terbaca kotak. `DUST_FAR_DIM` sudah menangani persepsi kedalaman.
+    sizeAttenuation: false,
     vertexColors: true,
     transparent: true,
     opacity: 0.6,
