@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIsoLayoutEffect } from '../hooks/useIsoLayoutEffect';
 import { NAV_CTA, NAV_LINKS, SITE } from '../content';
+import helixaLogo from '../assets/helixa-logo.png';
 
 function Wordmark() {
   return (
@@ -19,12 +20,13 @@ function Wordmark() {
       className="flex min-h-11 items-center gap-2 transition-opacity duration-300 ease-out hover:opacity-80"
       aria-label={SITE.wordmark + ' ' + SITE.wordmarkSuffix + ' - kembali ke atas'}
     >
-      <span className="font-display text-[1.75rem] leading-none font-semibold text-gold md:text-[2rem]">
-        {SITE.wordmark}
-      </span>
-      <span className="hidden font-sans text-[0.6875rem] tracking-[0.18em] text-bone-dim uppercase sm:inline">
-        {SITE.wordmarkSuffix}
-      </span>
+      <img
+        src={helixaLogo}
+        alt={SITE.wordmark + ' ' + SITE.wordmarkSuffix}
+        className="h-10 w-10 object-contain rounded-md md:h-11 md:w-11"
+        width="44"
+        height="44"
+      />
     </a>
   );
 }

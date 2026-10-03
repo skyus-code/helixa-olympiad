@@ -378,12 +378,19 @@ export function createOlympiadScene(
    */
   const dotTex = makeDustSprite();
 
+  // Durasi animasi fade-in (detik) dan target opasitas
+  const FADE_IN_OBJECT_DURATION = 1.2;
+  const FADE_IN_DUST_DURATION = 1.6;
+  const NODE_TARGET_OPACITY = 0.9;
+  const DUST_TARGET_OPACITY = 0.6;
+
   // ---- dua benda ruang Platonic ----
   //
   // Geometri icosahedron disimpan terpisah (bukan diambil kembali dari
   // `group.children[0]`) karena simpul-simpulnya dibutuhkan untuk layer titik
   // di bawah. `children` bertipe `Object3D[]`, jadi `.geometry` tidak ada di
   // tipe itu - menyimpan referensinya di sini juga lebih jelas urutan buildup.
+  const meshMats: Array<{ mat: THREE.MeshBasicMaterial; targetOpacity: number }> = [];
   const icosaGeo = new THREE.IcosahedronGeometry(SOLID_A.radius, SOLID_A.detail);
   for (const spec of [SOLID_A, SOLID_B]) {
     const geo =
@@ -394,7 +401,7 @@ export function createOlympiadScene(
       color: spec.color,
       wireframe: true,
       transparent: true,
-      opacity: spec.opacity,
+      opacity: reduced ? spec.opacity : 0,
       depthWrite: false,
     });
     const mesh = new THREE.Mesh(geo, mat);
@@ -402,6 +409,7 @@ export function createOlympiadScene(
     mesh.rotation.y = spec.tilt * 0.5;
     mesh.userData.speed = spec.speed;
     group.add(mesh);
+    meshMats.push({ mat, targetOpacity: spec.opacity });
     disposables.push(geo, mat);
   }
 
@@ -419,7 +427,7 @@ export function createOlympiadScene(
     // `size` dibaca sebagai pixel dan ukurannya pasti.
     sizeAttenuation: false,
     transparent: true,
-    opacity: 0.9,
+    opacity: reduced ? NODE_TARGET_OPACITY : 0,
     depthWrite: false,
     // WAJIB. Tanpa baris ini, 12 titik simpul digambar sebagai persegi putih
     // solid - dan karena ukurannya dua kali debu serta nearly opaque, mereka
@@ -481,7 +489,7 @@ export function createOlympiadScene(
     sizeAttenuation: false,
     vertexColors: true,
     transparent: true,
-    opacity: 0.6,
+    opacity: reduced ? DUST_TARGET_OPACITY : 0,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     map: dotTex,
@@ -490,6 +498,11 @@ export function createOlympiadScene(
   const dust = new THREE.Points(dustGeo, dustMat);
   scene.add(dust);
   disposables.push(dustGeo, dustMat, dotTex);
+
+  // Animasi awal: skala halus objek 3D saat mulai fade-in
+  if (!reduced) {
+    group.scale.setScalar(0.88);
+  }
 
   // ---- state ----
   let time = 0;
@@ -536,6 +549,30 @@ export function createOlympiadScene(
   function frame() {
     raf = requestAnimationFrame(frame);
     time += 1 / 60;
+
+    // Animasi fade-in untuk objek 3D Platonic dan partikel-partikel debu
+    if (time < FADE_IN_DUST_DURATION) {
+      // Objek 3D (polyhedra & nodes) fade-in dengan cubic ease-out
+      const objProgress = Math.min(1, time / FADE_IN_OBJECT_DURATION);
+      const easeObj = 1 - Math.pow(1 - objProgress, 3);
+      for (const item of meshMats) {
+        item.mat.opacity = item.targetOpacity * easeObj;
+      }
+      nodeMat.opacity = NODE_TARGET_OPACITY * easeObj;
+      group.scale.setScalar(0.88 + 0.12 * easeObj);
+
+      // Partikel-partikel debu fade-in (staggered halus setelah objek mulai tampil)
+      const dustProgress = Math.min(1, Math.max(0, (time - 0.1) / (FADE_IN_DUST_DURATION - 0.1)));
+      const easeDust = 1 - Math.pow(1 - dustProgress, 3);
+      dustMat.opacity = DUST_TARGET_OPACITY * easeDust;
+    } else if (time < FADE_IN_DUST_DURATION + 0.1) {
+      for (const item of meshMats) {
+        item.mat.opacity = item.targetOpacity;
+      }
+      nodeMat.opacity = NODE_TARGET_OPACITY;
+      dustMat.opacity = DUST_TARGET_OPACITY;
+      group.scale.setScalar(1);
+    }
 
     for (const child of group.children) {
       const speed = (child.userData as { speed?: number }).speed ?? 0;

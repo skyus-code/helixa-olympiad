@@ -40,6 +40,7 @@ export function OlympiadScene({ className = '' }: { className?: string }) {
   const handleRef = useRef<OlympiadHandle | null>(null);
   const [generation, setGeneration] = useState(0);
   const [failed, setFailed] = useState(false);
+  const [ready, setReady] = useState(false);
 
   /*
    * HANYA mode 'rich'.
@@ -68,6 +69,9 @@ export function OlympiadScene({ className = '' }: { className?: string }) {
         if (cancelled) return;
         try {
           handleRef.current = mod.createOlympiadScene(canvas, { reduced: false });
+          requestAnimationFrame(() => {
+            if (!cancelled) setReady(true);
+          });
         } catch (err) {
           // Wajib: WebGL ditolak. Halaman form tetap harus utuh tanpa objek.
           console.warn('WebGL scene form gagal, form tetap tanpa latar 3D:', err);
@@ -83,6 +87,7 @@ export function OlympiadScene({ className = '' }: { className?: string }) {
       cancelled = true;
       handleRef.current?.dispose();
       handleRef.current = null;
+      setReady(false);
       // Ganti elemen canvas, bukan hanya melepas scenenya (lihat header file).
       setGeneration((g) => g + 1);
     };
@@ -114,7 +119,10 @@ export function OlympiadScene({ className = '' }: { className?: string }) {
       <canvas
         key={generation}
         ref={canvasRef}
-        className="absolute inset-0 h-full w-full opacity-90 transition-opacity duration-1000"
+        className={
+          'absolute inset-0 h-full w-full transition-opacity duration-1000 ease-out ' +
+          (ready ? 'opacity-90' : 'opacity-0')
+        }
       />
     </div>
   );
