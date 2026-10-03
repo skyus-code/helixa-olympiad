@@ -131,6 +131,123 @@ const DUST_SWAY = 0.42;
 const DUST_SWAY_SPEED = 0.28;
 
 /**
+ * Kecerahan butiran yang paling jauh dari kamera, sebagai bagian dari 1.
+ *
+ * Inilah yang membuat layer ini terbaca sebagai udara, bukan sebagai tabel
+ * bintang. Tanpa peredupan ini semua butiran punya kecerahan sama, dan sumbu z
+ * hanya mengubah ukurannya lewat `sizeAttenuation`; mata membaca itu sebagai
+ * gambar, bukan sebagai ruang. Meredupkan butiran yang menjauh memberi
+ * persepsi kedalaman yang murah: tanpa lighting, tanpa shader tambahan, cukup
+ * satu perkalian pada warna yang sudah ada.
+ *
+ * 0.55 dipilih supaya butiran paling jauh tetap terbaca. Kalau terlalu rendah,
+ * separuh volume debu praktis hilang dan layer ini kehilangan teksturnya.
+ */
+const DUST_FAR_DIM = 0.55;
+
+/**
+ * Arah cahaya sprite, sudah ternormalisasi.
+ *
+ * X dan Y negatif berarti cahaya datang dari kiri ATAS. Z positif sedikit
+ * mengarah ke penonton, supaya sisi yang menghadap kamera juga menyala -
+ * tanpa itu, butiran terlihat seperti bola yang gelap dari arah pandangan.
+ */
+const DUST_LIGHT = { x: -0.42, y: -0.52, z: 0.74 };
+
+/**
+ * Cahaya ambient: sisi gelap butiran tetap menyala, tidak pernah hitam total.
+ *
+ * Debu di ruang nyata tidak pernah blackout, karena selalu ada cahaya ambient
+ * dari segala arah. 0.30 membuat sisi yang jauh dari cahaya terlihat sebagai
+ * bola abu-abu, bukan lubang hitam di dalam sprite. Kalau 0, tiap butiran
+ * terlihat seperti cincin gelap - dan justru itu yang tidak natural.
+ */
+const DUST_AMBIENT = 0.3;
+
+/**
+ * Sprite satu butiran debu: BULAT dan BER-SHADING.
+ *
+ * Tanpa `map`, three.js memakai kotak putih solid untuk `Points`, sehingga
+ * setiap partikel tergambar sebagai PERSEGI. Itulah bentuk "kotak-kotak" yang
+ * terlihat di form pendaftaran. Sekarang tiap butiran memakai sprite bulat
+ * yang dihitung sendiri:
+ *
+ *   - BENTUK: jarak dari pusat menentukan alpha, jadi tepinya bulat dan
+ *     ter-anti-alias. Cakupannya dihitung per piksel dalam satuan piksel,
+ *     bukan sekadar `r > 1`, jadi tidak ada tepi bergerigi di layar kecil.
+ *   - SHADING: tiap piksel diperlakukan sebagai titik pada permukaan bola
+ *     (normal = x, y, sqrt(1 - r^2)), lalu disinari dari arah `DUST_LIGHT`.
+ *     Hasilnya gradasi terang di kiri-atas dan sisi jauh yang meredup, jadi
+ *     butiran terbaca sebagai butiran BER-BENTUK, bukan titik rata.
+ *   - HIGHLIGHT kecil ditambahkan supaya sisi yang kena cahaya terlihat
+ *     sedikit mengkilap, seperti butiran yang benar-benar mengenai cahaya.
+ *
+ * Alpha sengaja dibiarkan memuncak di 1.0, dan peredupan shading dilakukan
+ * lewat RGB. Alasannya presisi: canvas menyimpan piksel dalam bentuk
+ * premultiplied, jadi warna pada alpha kecil ikut terkuantisasi kasar - dan
+ * tepi justru bagian yang paling butuh gradasi mulus. Dengan membiarkan alpha
+ * hanya mengurus bentuk, gradasi shading tetap utuh di bagian yang
+ * benar-benar terlihat.
+ */
+function makeDustSprite(): THREE.Texture {
+  const size = 64;
+  const cv = document.createElement('canvas');
+  cv.width = size;
+  cv.height = size;
+  const ctx = cv.getContext('2d');
+  if (!ctx) throw new Error('Canvas 2D tidak tersedia untuk sprite debu');
+
+  const img = ctx.createImageData(size, size);
+  const px = img.data;
+  const half = size / 2;
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      // -1..1, dengan (0, 0) di tengah sprite. `half` sudah setengah dari lebar
+      // sprite, jadi cukup `+ 0.5` untuk mengambil pusat piksel - tidak ada
+      // faktor 2 di sini. Kalau ada, rentangnya jadi -3..3 dan sebagian besar
+      // piksel jatuh di luar lingkaran: butirannya menyusut jadi seperempat
+      // ukuran yang dimaksud dan jauh lebih redup dari seharusnya.
+      const u = (x + 0.5) / half - 1;
+      const v = (y + 0.5) / half - 1;
+      const r2 = u * u + v * v;
+      const i = (y * size + x) * 4;
+
+      if (r2 > 1) {
+        px[i + 3] = 0;
+        continue;
+      }
+
+      // Cakupan tepi dihitung dari jarak ke lingkaran dalam satuan piksel,
+      // jadi nilainya jatuh pelan dari 1 ke 0 di tepi: anti-aliasing yang benar.
+      const edge = (1 - Math.sqrt(r2)) * half;
+      const alpha = edge <= 0 ? 0 : Math.min(1, edge);
+
+      // Normal permukaan bola satuan di titik (u, v).
+      const nz = Math.sqrt(Math.max(0, 1 - r2));
+      const diffuse = Math.max(0, u * DUST_LIGHT.x + v * DUST_LIGHT.y + nz * DUST_LIGHT.z);
+
+      const shade = DUST_AMBIENT + (1 - DUST_AMBIENT) * diffuse;
+      const spec = Math.pow(diffuse, 12) * 0.28;
+      const val = Math.min(1, shade + spec) * 255;
+
+      // Grayscale: rona emas datang dari vertex color, jadi sprite ini hanya
+      // boleh mengalikan terang/gelap - kalau dia berwarna, satu partikel
+      // akan dapat dua warna sekaligus.
+      px[i] = val;
+      px[i + 1] = val;
+      px[i + 2] = val;
+      px[i + 3] = alpha * 255;
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
  * Kumpulkan simpul unik dari polyhedron.
  *
  * `IcosahedronGeometry` mengembalikan BufferGeometry TANPA index, jadi setiap
@@ -247,21 +364,31 @@ export function createOlympiadScene(
   const c = new THREE.Color();
   for (let i = 0; i < DUST_COUNT; i++) {
     const x = (Math.random() * 2 - 1) * DUST.x;
+    const z = (Math.random() * 2 - 1) * DUST.z;
     dustPos[i * 3] = x;
     dustPos[i * 3 + 1] = (Math.random() * 2 - 1) * DUST.y;
-    dustPos[i * 3 + 2] = (Math.random() * 2 - 1) * DUST.z;
+    dustPos[i * 3 + 2] = z;
     dustBaseX[i] = x;
     // Campuran dua emas supaya layer tidak terlihat satu warna datar.
     c.copy(GOLD).lerp(GOLD_BRIGHT, Math.random() * 0.7);
-    dustColor[i * 3] = c.r;
-    dustColor[i * 3 + 1] = c.g;
-    dustColor[i * 3 + 2] = c.b;
+    // Peredupan sesuai kedalaman (lihat DUST_FAR_DIM). Perhitungan ini statis
+    // karena z tidak pernah berubah - yang bergerak hanya x dan y - jadi tidak
+    // ada biaya per frame. Pangkat 0.65 membuat gradasi lebih cepat mendekati
+    // kamera: kalau linier, tiap kedalaman punya kecerahan yang sama dan
+    // efeknya hilang.
+    const depth = (z + DUST.z) / (2 * DUST.z); // 0 = terjauh, 1 = terdekat
+    const dim = DUST_FAR_DIM + (1 - DUST_FAR_DIM) * Math.pow(depth, 0.65);
+    dustColor[i * 3] = c.r * dim;
+    dustColor[i * 3 + 1] = c.g * dim;
+    dustColor[i * 3 + 2] = c.b * dim;
     // Fase ayunan per partikel, supaya geraknya tidak serempak.
     dustSeed[i] = Math.random() * Math.PI * 2;
   }
   dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
   dustGeo.setAttribute('color', new THREE.BufferAttribute(dustColor, 3));
 
+  // Sprite bulat dihitung sekali, di sini juga - bukan saat render.
+  const dustTex = makeDustSprite();
   const dustMat = new THREE.PointsMaterial({
     size: 0.025,
     sizeAttenuation: true,
@@ -275,7 +402,7 @@ export function createOlympiadScene(
   });
   const dust = new THREE.Points(dustGeo, dustMat);
   scene.add(dust);
-  disposables.push(dustGeo, dustMat);
+  disposables.push(dustGeo, dustMat, dustTex);
 
   // ---- state ----
   let time = 0;
