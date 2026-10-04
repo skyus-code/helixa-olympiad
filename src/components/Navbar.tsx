@@ -202,7 +202,7 @@ export function Navbar() {
       <header
         inert={!interactive}
         className={
-          'fixed z-[100] left-1/2 -translate-x-1/2 w-[calc(100%-1.5rem)] sm:w-[calc(100%-3rem)] max-w-5xl transition-all duration-700 ease-out ' +
+          'fixed z-[100] left-1/2 -translate-x-1/2 w-[calc(100%-1.5rem)] sm:w-[calc(100%-3rem)] max-w-2xl transition-all duration-700 ease-out ' +
           'rounded-2xl sm:rounded-full ' +
           (shown
             ? 'top-3 sm:top-4 md:top-5 opacity-100 translate-y-0 scale-100 border border-gold-line/60 bg-ink/40 backdrop-blur-2xl backdrop-saturate-150 backdrop-brightness-110 shadow-[0_16px_36px_-10px_rgba(0,0,0,0.8),0_0_24px_-4px_rgba(212,175,55,0.12),inset_0_1px_1px_rgba(255,255,255,0.18)]'
