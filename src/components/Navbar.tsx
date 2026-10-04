@@ -44,6 +44,12 @@ function MenuIcon({ open }: { open: boolean }) {
  */
 const STALE_MS = 300;
 
+/*
+ * Durasi transisi header, harus sama dengan `duration-700` di className
+ * header. Dipakai untuk menunda `inert` sampai fade-out selesai.
+ */
+const HEADER_FADE_MS = 700;
+
 export function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
@@ -158,13 +164,47 @@ export function Navbar() {
 
   const close = useCallback(() => setOpen(false), []);
 
+  /* Keadaan tampilan header: muncul hanya setelah scroll 40px DAN panel
+   * mobile tertutup. Satu sumber kebenaran untuk className, `inert`, dan
+   * refleksi - sebelumnya tiga tempat menghitungnya sendiri. */
+  const shown = scrolled && !open;
+
+  /*
+   * Header tersembunyi (opacity-0) TETAP bisa diklik dan difokus: opacity
+   * tidak mematikan hit-testing maupun tab-order. DiUkur di halaman ini,
+   * `a.focus()` ke tombol "Daftar" berhasil saat scrollY=0, padahal
+   * user tidak melihat apa pun. Itu bug aksesibilitas, bukan desain:
+   * orang yang pakai keyboard menabrak link tak terlihat, dan klik di
+   * area atas halaman mendarat ke navbar yang tak terlihat.
+   *
+   * `inert`_membereskan keduanya sekaligus - keluar dari tab-order, keluar
+   * dari hit-testing, dan tidak diumumkan pembaca layar.
+   *
+   * Kenapa bukan `inert={!shown}` yang polos? Karena saat user menggulir
+   * ke atas, navbar mulai memudar selama 700ms. Kalau langsung inert,
+   * klik di tengah fade-out itu diam-diam tidak melakukan apa-apa -
+   * user masih melihat tombolnya. Jadi `inert` ditunda sampai transisi
+   * benar-benar selesai: selama itu navbar masih di layar, jadi masih
+   * boleh dipakai.
+   */
+  const [interactive, setInteractive] = useState(false);
+  useEffect(() => {
+    if (shown) {
+      setInteractive(true);
+      return;
+    }
+    const t = window.setTimeout(() => setInteractive(false), HEADER_FADE_MS);
+    return () => window.clearTimeout(t);
+  }, [shown]);
+
   return (
     <>
       <header
+        inert={!interactive}
         className={
           'fixed z-[100] left-1/2 -translate-x-1/2 w-[calc(100%-1.5rem)] sm:w-[calc(100%-3rem)] max-w-5xl transition-all duration-700 ease-out ' +
           'rounded-2xl sm:rounded-full ' +
-          (scrolled && !open
+          (shown
             ? 'top-3 sm:top-4 md:top-5 opacity-100 translate-y-0 scale-100 border border-gold-line/60 bg-ink/40 backdrop-blur-2xl backdrop-saturate-150 backdrop-brightness-110 shadow-[0_16px_36px_-10px_rgba(0,0,0,0.8),0_0_24px_-4px_rgba(212,175,55,0.12),inset_0_1px_1px_rgba(255,255,255,0.18)]'
             : 'top-1 sm:top-2 md:top-3 opacity-0 -translate-y-4 scale-[0.98] border border-transparent bg-transparent shadow-none')
         }
@@ -175,7 +215,7 @@ export function Navbar() {
           aria-hidden="true"
           className={
             'pointer-events-none absolute inset-0 overflow-hidden rounded-[inherit] transition-opacity duration-700 ' +
-            (scrolled && !open ? 'opacity-100' : 'opacity-0')
+            (shown ? 'opacity-100' : 'opacity-0')
           }
         >
           {/* Specular highlight on the top lip of the glass. This is the single
