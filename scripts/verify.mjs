@@ -793,7 +793,39 @@ console.log('\n=== B7. NAVBAR: TRANSPARAN -> SOLID+BLUR ===');
   check('Navbar transparan di atas', alphaOf(nb.top.bg) < 0.05, nb.top.bg);
   check('Scroll berjalan', nb.gone.y > 300, 'scrollY=' + nb.gone.y);
   check('Navbar blur setelah scroll', nb.gone.blur.includes('blur'), nb.gone.blur);
-  check('Navbar solid setelah scroll', alphaOf(nb.gone.bg) > 0.5, nb.gone.bg);
+  /*
+   * SEBELUMNYA: alpha > 0.5, dengan nama "Navbar solid setelah scroll".
+   *
+   * Angka itu benar untuk navbar buram-gelap, dan SALAH untuk navbar kaca.
+   * Kaca didefinisikan justru oleh tembus pandangnya: isinya cuma lapisan
+   * pekat tipis di atas backdrop yang sudah di-blur. Meminta alpha > 0,5
+   * berarti melarang efek kaca yang diminta, karena lapisan seopacity 75%
+   * menutup tiga perempat isi di belakangnya - persis itulah bentuk
+   * "bar gelap" yang dikeluhkan, bukan kaca.
+   *
+   * Yang diuji sekarang adalah syarat KACA, dan ketiganya wajib:
+   *   1. ada tint (alpha di atas 0, atau navbar akan hilang altogether
+   *      karena teks putih di atasnya tidak punya substrate);
+   *   2. translucent - alpha DI BAWAH 0,75, jadi isi halaman di
+   *      belakangnya benar-benar ikut meneruskan;
+   *   3. blur + saturate aktif, tanpa itu "kaca" cuma panel abu-abu.
+   *
+   * Batas 0,75 dipilih longgar: 0,72 masih terbaca kaca, 0,80 sudah jadi
+   * buram lagi. Angka ini mengunci keputusan desain (alpha 0,40 yang dipakai
+   * sekarang), jadi test ini mengunci niatnya, bukan sekadar blur.
+   */
+  const navAlpha = alphaOf(nb.gone.bg);
+  const navBlur = nb.gone.blur || '';
+  check(
+    'Navbar KACA setelah scroll: tembus pandang, bukan buram',
+    navAlpha > 0.05 && navAlpha < 0.75,
+    'alpha=' + navAlpha + ' ' + nb.gone.bg,
+  );
+  check(
+    'Navbar KACA: blur + saturate aktif ( efek kaca, bukan panel abu)',
+    /blur\(/.test(navBlur) && /saturate\(/.test(navBlur),
+    navBlur,
+  );
   check('Border emas setelah scroll', alphaOf(nb.gone.border) > 0.05, nb.gone.border);
 }
 

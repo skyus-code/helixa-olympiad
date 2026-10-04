@@ -10,12 +10,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIsoLayoutEffect } from '../hooks/useIsoLayoutEffect';
-import { NAV_CTA, NAV_LINKS, SITE } from '../content';
-
-/* Logotype dipindahkan ke favicon — Wordmark di navbar dinonaktifkan. */
-function Wordmark() {
-  return null;
-}
+import { NAV_CTA, NAV_LINKS } from '../content';
 
 function MenuIcon({ open }: { open: boolean }) {
   return (
@@ -170,7 +165,7 @@ export function Navbar() {
           'fixed z-[100] left-1/2 -translate-x-1/2 w-[calc(100%-1.5rem)] sm:w-[calc(100%-3rem)] max-w-5xl transition-all duration-700 ease-out ' +
           'rounded-2xl sm:rounded-full ' +
           (scrolled && !open
-            ? 'top-3 sm:top-4 md:top-5 opacity-100 translate-y-0 scale-100 border border-gold-line bg-ink/75 backdrop-blur-2xl shadow-[0_16px_36px_-10px_rgba(0,0,0,0.8),0_0_24px_-4px_rgba(212,175,55,0.12),inset_0_1px_1px_rgba(255,255,255,0.18)]'
+            ? 'top-3 sm:top-4 md:top-5 opacity-100 translate-y-0 scale-100 border border-gold-line/60 bg-ink/40 backdrop-blur-2xl backdrop-saturate-150 backdrop-brightness-110 shadow-[0_16px_36px_-10px_rgba(0,0,0,0.8),0_0_24px_-4px_rgba(212,175,55,0.12),inset_0_1px_1px_rgba(255,255,255,0.18)]'
             : 'top-1 sm:top-2 md:top-3 opacity-0 -translate-y-4 scale-[0.98] border border-transparent bg-transparent shadow-none')
         }
         style={{ marginTop: 'env(safe-area-inset-top)' }}
@@ -183,21 +178,26 @@ export function Navbar() {
             (scrolled && !open ? 'opacity-100' : 'opacity-0')
           }
         >
-          {/* Garis refleksi cahaya specular di bibir atas kaca */}
-          <div className="absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-white/40 to-transparent" />
-          {/* Kilau refleksi kaca dari atas ke bawah */}
-          <div className="absolute inset-0 bg-gradient-to-b from-white/[0.08] via-transparent to-transparent" />
-          {/* Refleksi emas halus di bibir bawah */}
-          <div className="absolute inset-x-12 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/25 to-transparent" />
+          {/* Specular highlight on the top lip of the glass. This is the single
+              strongest "this is glass" cue: a hard bright line where the curved
+              surface catches the light, fading out toward both ends. */}
+          <div className="absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-white/70 to-transparent" />
+          {/* Second, wider and softer highlight just under it: gives the lip some
+              thickness instead of reading as a 1px sticker. */}
+          <div className="absolute inset-x-10 top-px h-[3px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+          {/* Sheen sweeping down the face of the glass from the top. */}
+          <div className="absolute inset-0 bg-gradient-to-b from-white/[0.14] via-white/[0.03] to-transparent" />
+          {/* Curved-surface sheen: an off-centre elliptical hotspot, which is what
+              a flat vertical gradient can never fake. */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_55%_120%_at_28%_-10%,rgba(255,255,255,0.16),transparent_70%)]" />
+          {/* Warm gold bounce along the bottom lip, tying the glass to the palette. */}
+          <div className="absolute inset-x-12 bottom-0 h-px bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
         </div>
 
         <nav
           aria-label="Navigasi utama"
-          className="relative flex h-14 sm:h-16 items-center justify-center gap-4 px-4 sm:px-6 md:px-7 transition-[background-color,backdrop-filter] duration-500 ease-out bg-transparent/0 backdrop-none sm:backdrop-blur-md sm:bg-ink/4"
-          style={{ backfaceVisibility: 'hidden' }}
+          className="relative flex h-14 sm:h-16 items-center justify-center gap-4 px-4 sm:px-6 md:px-7"
         >
-          <Wordmark />
-
           <div className="hidden items-center gap-7 md:flex">
             <ul className="flex items-center gap-7">
               {NAV_LINKS.map((link) => (
@@ -243,8 +243,7 @@ export function Navbar() {
           className="menu-panel fixed inset-0 z-[120] flex flex-col bg-ink/97 backdrop-blur-xl md:hidden"
           style={{ paddingTop: 'env(safe-area-inset-top)' }}
         >
-          <div className="shell flex h-16 shrink-0 items-center justify-between">
-            <Wordmark />
+          <div className="shell flex h-16 shrink-0 items-center justify-end">
             <button
               type="button"
               onClick={close}
