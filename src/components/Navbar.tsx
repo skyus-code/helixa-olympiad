@@ -11,24 +11,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useIsoLayoutEffect } from '../hooks/useIsoLayoutEffect';
 import { NAV_CTA, NAV_LINKS, SITE } from '../content';
-import helixaLogo from '../assets/helixa-logo.png';
 
+/* Logotype dipindahkan ke favicon — Wordmark di navbar dinonaktifkan. */
 function Wordmark() {
-  return (
-    <a
-      href="#top"
-      className="flex min-h-11 items-center gap-2 transition-opacity duration-300 ease-out hover:opacity-80"
-      aria-label={SITE.wordmark + ' ' + SITE.wordmarkSuffix + ' - kembali ke atas'}
-    >
-      <img
-        src={helixaLogo}
-        alt={SITE.wordmark + ' ' + SITE.wordmarkSuffix}
-        className="h-10 w-10 object-contain rounded-md md:h-11 md:w-11"
-        width="44"
-        height="44"
-      />
-    </a>
-  );
+  return null;
 }
 
 function MenuIcon({ open }: { open: boolean }) {
@@ -207,7 +193,8 @@ export function Navbar() {
 
         <nav
           aria-label="Navigasi utama"
-          className="relative flex h-14 sm:h-16 items-center justify-between gap-4 px-4 sm:px-6 md:px-7"
+          className="relative flex h-14 sm:h-16 items-center justify-center gap-4 px-4 sm:px-6 md:px-7 transition-[background-color,backdrop-filter] duration-500 ease-out bg-transparent/0 backdrop-none sm:backdrop-blur-md sm:bg-ink/4"
+          style={{ backfaceVisibility: 'hidden' }}
         >
           <Wordmark />
 
