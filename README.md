@@ -1,8 +1,15 @@
 # Helixa Olympiad — Landing Page
 
 Landing page satu halaman untuk **Helixa Olympiad**, olimpiade online Matematika & Biologi
-untuk siswa SMA di Indonesia. Static site tanpa backend, dibangun dengan Vite + React +
-TypeScript + Tailwind v4.
+untuk siswa SMA di Indonesia. Dibangun dengan Vite + React + TypeScript + Tailwind v4.
+
+Halaman publiknya tetap static site murni. Di belakangnya ada satu lapisan **opsional**:
+MySQL dengan API Express kecil, yang dipakai dua hal — menyimpan kiriman Form Pendaftaran
+(`#pendaftaran`) dan memberi panel admin (`#admin`) untuk mengubah tanggal, hadiah, juri, dan
+mitra tanpa menyentuh kode. **Kalau lapisan itu mati, situsnya tetap utuh**: semua teks punya
+nilai bawaan di `src/content.ts`, dan formnya kembali ke perilaku lamanya (menampilkan
+pengakuan jujur bahwa datanya belum tersimpan). Lihat
+[Database, API, dan panel admin](#database-api-dan-panel-admin).
 
 Stack gerak resmi: paket **`motion`** (Motion for React) + CSS native + IntersectionObserver,
 ditambah **three.js** untuk dua objek 3D (pusaran partikel DNA di hero, armillary di Aturan) dan
@@ -27,7 +34,76 @@ npm run build    # output ke dist/
 npm run preview  # cek hasil build
 ```
 
-## Empat skrip verifikasi
+Situsnya berjalan penuh tanpa database. Untuk menyalakan bagian yang menyimpan data
+(kiriman form + panel admin), lihat bagian berikutnya.
+
+---
+
+## Database, API, dan panel admin
+
+```bash
+# 0. Salin .env.example -> .env, lalu isi ADMIN_PASSWORD (jangan pakai nilai bawaan)
+# 1. Siapkan skema + nilai awal (idempoten: boleh dijalankan berkali-kali)
+npm run db:setup
+
+# 2. Jalankan API di port 4000
+npm run api
+
+# 3. Situsnya: `npm run dev` mem-proxy /api ke port 4000
+npm run dev
+```
+
+Panel admin: **`#admin`** — misal <http://localhost:5173/#admin>. Tidak ada tautan ke sana dari
+halaman publik; itu disengaja, dan `verify-admin.mjs` yang menjaganya.
+
+**Ganti `ADMIN_PASSWORD` sebelum dipakai sungguhan.** Nilai bawaannya ada di dalam kode dan
+terbaca siapa pun. Isi juga `ADMIN_SECRET` dengan nilai acak (kalau kosong, password dipakai
+sebagai kuncinya — cukup untuk lokal, rapuh untuk produksi).
+
+### Kenapa API terpisah, dan apa akibatnya
+
+Browser tidak bisa bicara langsung ke MySQL, jadi ada satu proses Node kecil (`server/`) yang
+menjadi satu-satunya pintu ke database. Itu membawa satu konsekuensi yang harus disebut
+terang-terangan:
+
+> **Situs Vercel tidak bisa menjangkau MySQL di laptop.** Supaya data pendaftar benar-benar
+> tersimpan di situs yang tayang, MySQL harus di-host (Railway, Aiven, VPS, dsb.), API ini
+> di-deploy terpisah, lalu `VITE_API_URL` diisi alamat API itu **saat build**. Tanpa itu,
+> formnya tetap jujur menyatakan datanya belum tersimpan — bukan diam-diam mengaku berhasil.
+
+Karena itu juga `npm run check` sengaja **tidak** butuh database: `npm run check:api` dan
+`npm run check:admin` dipisah, dan keduanya berhenti dengan pesan jelas kalau API/MySQL tidak
+hidup.
+
+### Isi database
+
+| Tabel | Isi |
+|---|---|
+| `settings` | key/value. Empat kunci: `perdana.pendaftaran`, `perdana.pelaksanaan`, `perdana.pengumuman`, `perdana.hadiah` |
+| `people` | `kind` (`juri` / `mitra`), `name`, `role`, `monogram`, `sort_order` |
+| `registrations` | seluruh isi form + `ip`, `user_agent`, `created_at`. `UNIQUE (email, bidang)` supaya pendaftar ganda ketahuan, bukan dibiarkan |
+
+Nomor WhatsApp dinormalisasi ke `62...` **di server**, jadi apa pun yang diketik user
+(`0812...`, `+62 812-...`) tersimpan seragam. Kalau normalisasi itu dilepas, yang rusak adalah
+semua data sesudahnya tanpa satu pun pesan error — karena itu ada ujinya di `verify-api.mjs`.
+
+### Tiga aturan yang dijaga di lapisan ini
+
+1. **Database hanya MENIMPA teks bawaan, tidak menggantikannya.** `src/content.ts` tetap
+   sumber lengkapnya, jadi API mati / database kosong / balasan bukan JSON semuanya berakhir
+   pada halaman utuh. Ini bukan kemalasan: situs statis menjawab `/api/*` dengan `index.html`
+   berstatus **200**, jadi `res.ok` tidak bisa dipercaya. `src/lib/api.ts` memeriksa **bentuk**
+   balasan, dan "Pendaftaran terkirim" hanya diakui kalau server mengembalikan `id` barisnya.
+2. **Satu pintu ke jaringan.** Hanya `src/lib/api.ts` yang boleh memanggil `fetch`. Aturan
+   kejujuran di poin 1 hanya bisa dijamin kalau semua balasan diperiksa di satu tempat;
+   `verify-daftar.mjs` memeriksa batas itu secara statis.
+3. **Tidak ada tampilan optimistis di panel.** Nilai baru muncul setelah server
+   mengonfirmasi. Halaman ini mengubah teks yang dibaca calon peserta, jadi "sepertinya
+   tersimpan" tidak cukup.
+
+---
+
+## Skrip verifikasi
 
 Semuanya memakai Chrome DevTools Protocol lewat WebSocket bawaan Node — tanpa
 Puppeteer/Playwright, jadi tidak menambah dependency. Semuanya mengukur **production
@@ -42,7 +118,44 @@ npm run check:responsive   # 11 viewport: overflow, teks terpotong, target sentu
 npm run check:verify       # cek statis + 17 bagian perilaku, animasi, scroll & performa
 npm run check:webgl-off    # WebGL dimatikan: hero jatuh ke SVG helix
 npm run check:lighthouse   # Lighthouse Mobile (butuh install terpisah, lihat catatan)
+
+# Halaman form punya dokumennya sendiri:
+node scripts/verify-daftar.mjs http://localhost:4200/
+
+# Dua ini butuh `npm run api` + MySQL hidup, dan sengaja dipisah dari `npm run check`:
+npm run check:api          # API & database langsung, tanpa browser (35 cek)
+npm run check:admin        # panel #admin lewat browser (23 cek)
 ```
+
+`check:api` menembak API langsung untuk hal-hal yang tidak kelihatan dari layar: nomor WhatsApp
+yang tidak lagi dinormalisasi, pendaftar ganda yang diam-diam lolos, `settings` yang menerima
+kunci sembarang, dan token palsu yang diterima. `check:admin` membuktikan perubahan panel
+**sampai** ke halaman publik — tanggal yang diedit dibaca lagi dari section Perdana, juri yang
+ditambahkan muncul di section "Juri & Mitra" — lalu mengembalikan semuanya lewat API, supaya
+database tidak ditinggali data karangan meski Chrome mati di tengah jalan.
+
+### Hasil terakhir, termasuk yang masih gagal
+
+| Skrip | Hasil |
+|---|---|
+| `verify-api.mjs` | **35 PASS / 0 FAIL** |
+| `verify-admin.mjs` | **23 PASS / 0 FAIL** |
+| `verify-daftar.mjs` | **73 PASS / 5 FAIL** |
+
+Lima kegagalan di `verify-daftar.mjs` semuanya temuan lama, tidak satu pun dari lapisan
+database, dan dilaporkan apa adanya:
+
+- **B4 — kontras tombol kirim**, terukur 1:1 di atas scene berputar, sementara tanpa scene
+  warnanya 5.1:1. Tombolnya sendiri tidak berubah.
+- **B5 — target sentuh**: radio "bidang" dan checkbox "setuju" terukur 1px dan 20px. Yang
+  diukur `<input>` aslinya, sedangkan area yang benar-benar ditekan ada di `<label>`.
+- **B7 — reduced-motion (3 cek)**: uji mengharapkan sebuah kanvas 3D, padahal `OlympiadScene`
+  memang sengaja tidak dipasang di mode itu. Yang salah harapannya, bukan halamannya — sudah
+  dicatat di luar cakupan, belum diperbaiki.
+
+Dua temuan lama lain sudah diperbaiki bersama uji ini: panel hasil form sekarang punya
+`aria-live`, dan nomor WhatsApp di ringkasan diperiksa setelah pemisah dibuang (sebelumnya
+polanya menuntut angka tanpa spasi, padahal user memang boleh mengetik `+62 812-3456-7890`).
 
 Semuanya menerima URL sebagai argumen pertama, default `http://localhost:4200/`:
 
@@ -274,23 +387,36 @@ Helixa Olympiad/
 ├─ .github/workflows/      # deploy.yml — build & deploy GitHub Pages
 ├─ public/favicon.svg      # ikon emas, SVG tulen
 ├─ public/fonts/           # Cormorant Garamond + Manrope variable woff2 (SIL OFL, latin, ~62 kB)
+├─ .env.example            # contoh konfigurasi MySQL/API/admin (`.env` di-git-ignore)
+├─ server/                 # API + database — opsional, situs tetap jalan tanpanya
+│  ├─ index.js             # /api/content, /api/register, /api/admin/*, ekspor CSV
+│  ├─ auth.js              # password -> token HMAC (tanpa tabel user, tanpa bcrypt)
+│  ├─ db.js                # pool mysql2 + ping untuk /api/health
+│  └─ schema.sql           # settings, people, registrations
 ├─ scripts/
+│  ├─ db-setup.mjs             # jalankan schema + isi nilai awal (idempoten)
 │  ├─ audit.mjs                # 11 viewport + deteksi overflow / teks terpotong / target sentuh
 │  ├─ verify.mjs               # cek statis + B1-B17 perilaku, animasi, scroll & performa (171 cek)
+│  ├─ verify-daftar.mjs        # halaman form #pendaftaran (78 cek; jalur simpan butuh API)
 │  ├─ verify-webgl-off.mjs     # WebGL dimatikan: hero jatuh ke SVG helix (7 cek)
+│  ├─ verify-api.mjs           # API & MySQL langsung, tanpa browser (35 cek)
+│  ├─ verify-admin.mjs         # panel #admin: login, tanggal, juri, pendaftar (23 cek)
 │  └─ lighthouse.mjs           # Lighthouse Mobile lewat Node API (install di luar repo)
 └─ src/
    ├─ main.tsx
-   ├─ App.tsx              # Navbar → main#top (8 section) → Footer → grain → cursor
+   ├─ App.tsx              # tiga route: landing (Navbar + 8 section) | #pendaftaran | #admin
    ├─ index.css            # design tokens, base, stacking, reveal, FAQ, kursor, blok reduced-motion
    ├─ content.ts           # SEMUA teks + REGISTER_URL + INSTAGRAM_URL
    ├─ vite-env.d.ts
    ├─ lib/
+   │  ├─ api.ts            # SATU-SATUNYA fetch ke API + pemeriksaan bentuk balasan
+   │  ├─ siteContent.ts    # teks bawaan di-OVERLAY nilai database (useSyncExternalStore)
    │  └─ motion.ts         # MQ (termasuk MQ.rich), EASE, DUR, PARALLAX, CURSOR
    ├─ three/
    │  ├─ dnaParticles.ts   # 560 partikel emas → heliks DNA (three.js) — rich saja
    │  └─ gyroscope.ts      # 4 cincin TorusGeometry wireframe (three.js) — rich saja
    ├─ hooks/
+   │  ├─ useHashRoute.ts        # satu sumber route: landing | #pendaftaran | #admin
    │  ├─ useIsoLayoutEffect.ts  # useLayoutEffect aman-SSR
    │  ├─ useMediaQuery.ts       # abonemen MQ sebagai state React
    │  ├─ useMotionMode.ts       # gerbang 'reduced' | 'rich' | 'simple' — device-first
@@ -299,6 +425,8 @@ Helixa Olympiad/
    │  ├─ useScrollProgress.ts   # progress scroll JENDELA untuk section sticky
    │  └─ useMagnetic.ts         # registerHoverTarget + subscribeHoverState (CSS var)
    └─ components/
+      ├─ AdminPanel.tsx    # #admin: login, tanggal & hadiah, juri & mitra, daftar pendaftar
+      ├─ RegistrationPage.tsx  # #pendaftaran: 9 field, kirim ke API, ringkasan yang bisa disalin
       ├─ CursorLayer.tsx   # dot memimpin + cincin mengejar; berhenti saat menyatu
       ├─ Navbar.tsx
       ├─ Hero.tsx          # kinetic per baris + ambient + gerbang partikel/SVG
@@ -327,24 +455,31 @@ Helixa Olympiad/
 
 ## Mengedit konten
 
-**Semua teks ada di `src/content.ts`.** Tidak perlu menyentuh komponen.
+**Semua teks bawaan ada di `src/content.ts`.** Tidak perlu menyentuh komponen.
 
 | Yang diubah | Di mana |
 |---|---|
-| Link pendaftaran | `REGISTER_URL` |
+| Link pendaftaran | `REGISTER_URL` (kini route `#pendaftaran`, bukan URL luar) |
 | Link Instagram | `INSTAGRAM_URL` |
 | Navbar, hero, seluruh section | `SITE`, `NAV_LINKS`, `NAV_CTA`, `HERO`, `WHY`, `PERDANA`, `HOW_TO_JOIN`, `JUDGES`, `RULES`, `FAQ`, `CLOSING`, `FOOTER` |
+| Tanggal, hadiah, juri, mitra | panel **`#admin`** — tanpa deploy. Kalau API mati, yang tampil kembali ke nilai bawaan di `content.ts` |
 
-Nilai `REGISTER_URL` masih `"#"` (placeholder). `INSTAGRAM_URL` sudah diisi URL resmi
-Helixa. Ganti `REGISTER_URL` dengan URL asli sebelum publish.
+`REGISTER_URL` sudah menunjuk route form (`#pendaftaran`), bukan `"#"`. `INSTAGRAM_URL` diisi
+URL resmi Helixa.
 
 ### Placeholder yang perlu diganti
 
-Dicari dengan `grep -n "\[ISI" src/content.ts`:
+Tiga tanggal di `PERDANA.details` masih `[ISI TANGGAL]`. Dua cara mengisinya, dan bedanya
+penting:
 
-| Placeholder | Letak |
-|---|---|
-| `[ISI TANGGAL]` ×3 | Pendaftaran, Pelaksanaan, Pengumuman di `PERDANA.details` |
+- **Lewat panel `#admin`** — langsung tayang, tersimpan di database.
+- **Lewat `src/content.ts`** — perlu build ulang, tapi ini yang tetap tampil kalau API mati.
+  Mengisinya di sini membuat situs tidak bergantung pada database yang menyala.
+
+Satu detail yang mudah salah: `perdanaDetails()` di `src/lib/siteContent.ts` hanya menghitung
+ulang penanda placeholder untuk baris yang **benar-benar ditimpa** database. Tanpa syarat itu,
+baris bawaan seperti `Hadiah` (yang hari ini `placeholder: false`) bisa mendadak berubah gaya
+hanya karena API menyala.
 
 ### Aturan konten
 
@@ -863,8 +998,16 @@ permintaan ke pihak ketiga sama sekali saat halaman dimuat.
 npm run build   # -> dist/
 ```
 
-`dist/` adalah static site murni, tanpa adapter server. Hanya anchor (`#tentang` dll) dan
-tombol eksternal, jadi tidak perlu aturan rewrite.
+`dist/` adalah static site murni, tanpa adapter server. Halaman publiknya hanya butuh anchor
+(`#tentang` dll) dan route hash (`#pendaftaran`, `#admin`), jadi tidak perlu aturan rewrite.
+
+> **Kalau data pendaftar ingin benar-benar tersimpan di situs yang tayang**, lihat
+> [Database, API, dan panel admin](#database-api-dan-panel-admin): MySQL dan API-nya harus
+> di-host terpisah, lalu `VITE_API_URL` diisi saat build. Tanpa itu, situsnya tetap jalan
+> sepenuhnya, tapi formnya jujur menyatakan datanya belum tersimpan. Yang **tidak** terjadi juga
+> penting: dikatakannya `/api/*` dijawab `index.html` berstatus 200 oleh hosting statis, dan
+> `src/lib/api.ts` menolak balasan yang bentuknya bukan JSON API — jadi tidak ada "Pendaftaran
+> terkirim" palsu.
 
 - **GitHub Pages** — lewat `.github/workflows/deploy.yml`. Tiap push ke `main` build & deploy.
   URL: <https://skyus-code.github.io/helixa-olympiad/>
@@ -1168,8 +1311,9 @@ ikut salah. Trade-off metric-versus-kebenaran itu tidak diambil.
    di GitHub Pages. Google Fonts dihapus total: satu domain lebih sedikit, satu handshaking
    TLS lebih sedikit, dan nol permintaan ke pihak ketiga. Space Mono ikut dihapus (lihat token
    `--font-mono`). Kalau nanti butuh subset lain, tambahkan file woff2 + `<link>` preload-nya.
-5. **`REGISTER_URL` = `"#"`** sengaja dibiarkan sebagai placeholder agar tidak ada tautan
-   palsu yang terpublish. **`INSTAGRAM_URL`** sudah diisi URL resmi Helixa
+5. **`REGISTER_URL` = `'#pendaftaran'`** — route internal, bukan tautan luar. Dulu `"#"` supaya
+   tidak ada tautan palsu yang terpublish; sekarang halaman formnya memang ada, jadi tombol
+   "Daftar" mengarah ke sana. **`INSTAGRAM_URL`** diisi URL resmi Helixa
    (`https://www.instagram.com/helixa.olim/`) dan terbuka di tab baru; kedua tombol/link
    Instagram (CTA penutup & footer) memakai konstanta ini.
 6. **Tidak ada klaim kemitraan** dengan pemerintah atau instansi mana pun, sesuai batasan
@@ -1199,3 +1343,10 @@ ikut salah. Trade-off metric-versus-kebenaran itu tidak diambil.
     tetap hidup di mode `rich` adalah milik ScrollTrigger sendiri, tidak punya API untuk
     dimatikan, dan biayanya dihitung di
     [Scroll lock](#scroll-lock-cara-ikut--scrolltrigger-dengan-pin).
+11. **Lapisan database tidak boleh menjadi syarat hidupnya halaman.** Urutannya selalu:
+    teks bawaan di `content.ts` dulu, database hanya **menimpa**. Kegagalan yang paling mahal di
+    sini bukan "database tidak bisa dihubungi" (yang terlihat jelas), melainkan "server menjawab,
+    tapi isinya bukan data kita" — dan itu pasti terjadi di hosting statis, karena `index.html`
+    dikirim berstatus **200** untuk `/api/*`. Karena itu `src/lib/api.ts` memeriksa bentuk
+    balasan, bukan `res.ok`, dan `verify-api.mjs` menguji kasus yang tidak kelihatan dari layar
+    (normalisasi WhatsApp, pendaftar ganda, kunci `settings` asing, token palsu).
