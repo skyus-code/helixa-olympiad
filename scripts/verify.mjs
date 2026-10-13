@@ -764,23 +764,28 @@ console.log('\n=== B7. NAVBAR: TRANSPARAN -> SOLID+BLUR ===');
     };
     window.scrollTo(0, 600);
     /*
-     * Tunggu transisi navbar benar-benar selesai, bukan menebak durasinya.
-     * Timeout tetap sebelumnya (700ms) menghasilkan sampel 0,43–0,68 pada
-     * lima percobaan berturut — nilai yang benar 0,72, tapi terjaring di tengah
-     * jalan karena mesin sedang load. Polling sampai nilainya dua kali sama
-     * itu mengukur keadaan sebenarnya, dan tidak bisa lulus kalau transisi
-     * benar-benar tidak pernah tuntas.
+     * Tunggu sampai background BENAR-BENAR berubah dari keadaan transparan,
+     * lalu tunggu transisinya tenang.
+     *
+     * Loop lama berhenti begitu dua sampel berturut sama. Di mesin yang
+     * sedang sibuk, dua sampel pertama bisa sama-sama MASIH transparan -
+     * transisinya belum mulai, bukan belum selesai - sehingga yang terbaca
+     * justru keadaan sebelum scroll dan pemeriksaan kaca gagal padahal
+     * navbar sehat.
+     *
+     * Perubahan dari warna di atas adalah bukti yang tidak bisa salah tafsir.
+     * window.scrollTo diulang di dalam loop sebagai jaring supaya hasilnya
+     * tidak bergantung pada satu event scroll saja.
      */
-    const settled = await (async () => {
-      let prev = null;
-      for (let i = 0; i < 20; i++) {
-        await new Promise(r => setTimeout(r, 150));
-        const now = getComputedStyle(h).backgroundColor;
-        if (prev !== null && now === prev) return now;
-        prev = now;
-      }
-      return getComputedStyle(h).backgroundColor;
-    })();
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 150));
+      if (getComputedStyle(h).backgroundColor !== top.bg) break;
+      window.scrollTo(0, 600);
+    }
+    // Transisi background memakan 700ms: beri ruang supaya yang terbaca
+    // nilai AKHIR, bukan nilai tengah transisi.
+    await new Promise(r => setTimeout(r, 900));
+    const settled = getComputedStyle(h).backgroundColor;
     const gone = {
       y: window.scrollY,
       bg: settled,

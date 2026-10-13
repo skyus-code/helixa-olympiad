@@ -8,7 +8,8 @@
  *
  * Urutan tidak lagi punya provider scroll: halaman memakai scroll native
  * browser. Dari belakang ke depan:
- *   Navbar            -> fixed, berganti solid+blur saat scroll.
+ *   Navbar            -> fixed, berganti solid+blur saat scroll. Hanya di
+ *                        halaman utama; halaman form tidak memakainya.
  *   main #top         -> seluruh section stacking (kartu menumpuk CSS).
  *   Footer            -> di luar main, mengikuti setelah CTA.
  *   GrainOverlay      -> dekoratif, paling atas, pointer-events none.
@@ -66,7 +67,22 @@ export default function App() {
         Lewati ke konten
       </a>
 
-      <Navbar />
+      {/*
+       * Navbar HANYA di halaman utama.
+       *
+       * Di halaman form, navbar utama justru merugikan: satu-satunya tautan
+       * keluarnya ada di bawah form ("Kembali ke halaman utama"), dan menu
+       * section landing (`#tentang`, `#aturan`, `#faq`) semuanya menunjuk
+       * elemen yang TIDAK ada di DOM halaman form - diklik pun layar tidak
+       * bergerak, hanya hash yang berubah. Menu yang tidak punya tujuan itu
+       * lebih baik tidak ditampilkan sama sekali.
+       *
+       * Karena mount/unmount, animasi navbar di halaman utama tidak berubah:
+       * saat kembali ke `#top`, Navbar dipasang ulang dan efek scroll-nya
+       * membaca `window.scrollY` (yang sudah direset ke 0 oleh useHashRoute),
+       * jadi ia mulai dari keadaan transparan lalu muncul saat digulir.
+       */}
+      {onLanding && <Navbar />}
 
       {onLanding ? (
         <>

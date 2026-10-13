@@ -402,8 +402,34 @@ async function goto(url) {
     /* Dokumen belum ada; selalu navigasi. */
   }
   const loaded = withTimeout(once('Page.loadEventFired'), 25000, 'Page.loadEventFired untuk ' + url);
-  if (current === url) await send('Page.reload', {});
-  else await send('Page.navigate', { url });
+  /*
+   * "Dokumen yang sama" dibandingkan TANPA hash, bukan dengan URL penuh.
+   *
+   * B6 berakhir di `#top` (klik "kembali"), lalu B7 memanggil
+   * `goto('#pendaftaran')`: path identik, hash beda, dan Chrome tetap
+   * memperlakukannya sebagai perubahan dalam dokumen yang sama - jadi
+   * `Page.loadEventFired` tidak pernah datang, `goto` menggantung 25 detik,
+   * dan SELURUH blok B7 ke atas (termasuk B8-B10) tidak pernah dijalankan.
+   * Itu sebabnya sebelumnya hasil verify-daftar selalu berhenti di B7.
+   *
+   * Cara memaksanya jadi dokumen baru: ubah QUERY STRING. Perubahan query
+   * selalu memicu pemuatan dokumen sungguhan, sedangkan hash saja tidak.
+   * Hash target tetap dibawa apa adanya, jadi aplikasi tetap membuka route
+   * yang benar (`useHashRoute` hanya membaca `location.hash`, bukan query).
+   *
+   * `Page.reload` tidak dipakai untuk kasus ini: reload memuat ulang URL yang
+   * SEDANG terbuka - yaitu hash lama - sehingga `goto('#pendaftaran')` justru
+   * membuka halaman landing.
+   */
+  const stripHash = (u) => u.replace(/#.*$/, '');
+  const sameDoc = current !== '' && stripHash(current) === stripHash(url);
+  let target = url;
+  if (sameDoc) {
+    const [pathAndQuery, hash] = url.split('#');
+    const sep = pathAndQuery.includes('?') ? '&' : '?';
+    target = pathAndQuery + sep + 'nav=' + Date.now() + (hash ? '#' + hash : '');
+  }
+  await send('Page.navigate', { url: target });
   await loaded;
   await sleep(2200);
   await evalJs("document.documentElement.style.scrollBehavior='auto'; true;");
@@ -602,6 +628,53 @@ let sceneReady = false;
    * tergulir dengan lancar ke section yang salah, dan URL tetap sama. Tidak ada
    * error, tidak ada elemen hilang, semua pemeriksaan DOM tetap hijau.
    */
+  /*
+   * GULIR DULU, BARU KLIK.
+   * ---------------------
+   * Navbar baru muncul setelah halaman digulir melewati 40px, dan selama
+   * tersembunyi ia `inert` - sengaja, supaya tidak ada tautan tak terlihat
+   * yang bisa di-Tab atau diklik. Mengukur dan mengklik "Daftar" pada posisi
+   * paling atas karena itu bukan menguji jalur user, tapi menguji elemen yang
+   * memang belum bisa dipakai.
+   *
+   * Ini juga menghapus artefak pengukuran lama: pada keadaan tersembunyi
+   * header memakai `scale-[0.98]`, sehingga `getBoundingClientRect()` membaca
+   * 43,12px untuk tombol yang tingginya 44px - dan pemeriksaan >=44px gagal
+   * bukan karena target sentuhnya kecil, tapi karena transformnya.
+   *
+   * DUA JEBAKAN WAKTU, DAN INI YANG MEMBUATNYA GAGAL DULU:
+   *
+   *   1. `goto()` selesai pada `Page.loadEventFired`, dan itu terjadi SEBELUM
+   *      modul GSAP selesai di-`import()`. ScrollTrigger yang baru terpasang
+   *      menulis ulang posisi scroll, jadi `scrollTo(0, 600)` yang dikirim
+   *      terlalu awal dibatalkan - terukur: navbar tetap opacity 0.
+   *   2. Kalau halaman tidak jadi tergulir, navbar juga tidak muncul, dan klik
+   *      berikutnya mendarat di elemen `inert`.
+   *
+   * Karena itu gulirannya tidak "ditembak sekali lalu berharap": posisinya
+   * ditegakkan ulang sampai navbar benar-benar `opacity: 1` dan scrollY > 40,
+   * dengan batas percobaan supaya tidak menggantung.
+   */
+  const navVisible = JSON.parse(await evalJs(`(async () => {
+    const h = document.querySelector('header');
+    if (!h) return JSON.stringify({ ok: false, error: 'header tidak ada' });
+    for (let i = 0; i < 30; i++) {
+      if (Math.round(window.scrollY) <= 40) window.scrollTo(0, 600);
+      const op = getComputedStyle(h).opacity;
+      if (op === '1') {
+        return JSON.stringify({ ok: true, scrollY: Math.round(window.scrollY), opacity: op });
+      }
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    return JSON.stringify({
+      ok: false, scrollY: Math.round(window.scrollY),
+      opacity: getComputedStyle(h).opacity,
+    });
+  })()`));
+  check('Navbar sudah terlihat setelah digulir (prasyarat klik "Daftar")',
+    navVisible.ok,
+    navVisible.error ?? ('scrollY=' + navVisible.scrollY + ' opacity=' + navVisible.opacity));
+
   const CTA_EXPR = String.raw`[...document.querySelectorAll('header a')]
     .find((x) => x.textContent.trim() === 'Daftar' && x.getAttribute('href'))`;
 
@@ -1282,51 +1355,113 @@ for (const [w, h, mobile] of [
     r.cardW ? r.cardW + 'px' + (r.cardInside ? '' : ' (meluber)') : 'kartu tidak terukur');
 }
 
-console.log('\n=== B10. NAVIGASI DARI HALAMAN FORM KEMBALI KE SECTION LANDING ===');
+console.log('\n=== B10. HALAMAN FORM TANPA NAVBAR, LALU NAVBAR KEMBALI DI LANDING ===');
 {
   await setViewport(1440, 900, false);
   await setMotion('no-preference', false);
   await goto(DAFTAR);
   await sleep(1500);
 
-  const nav = JSON.parse(await evalJs(String.raw`(() => {
-    const a = [...document.querySelectorAll('header a')]
-      .find((x) => x.textContent.trim() === 'Aturan' && x.getAttribute('href') === '#aturan');
-    if (!a) return JSON.stringify({ error: 'tautan navbar tidak ditemukan' });
-    const r = a.getBoundingClientRect();
-    return JSON.stringify({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) });
-  })()`));
-  if (nav.error) {
-    check('Tautan navbar tetap bisa dipakai dari halaman form', false, nav.error);
-  } else {
-    for (const type of ['mousePressed', 'mouseReleased']) {
-      await send('Input.dispatchMouseEvent', {
-        type, x: nav.x, y: nav.y, button: 'left', clickCount: 1,
-        buttons: type === 'mousePressed' ? 1 : 0,
-      });
+  const alphaOf = (c) => {
+    if (!c || c === 'transparent') return 0;
+    if (c.includes('/')) {
+      const m = c.split('/')[1].match(/([\d.]+)\s*\)/);
+      return m ? Number(m[1]) : 1;
     }
-    await sleep(2600);
-  }
+    const m = c.match(/rgba?\(([^)]+)\)/);
+    if (!m) return 1;
+    const p = m[1].split(',').map((s) => s.trim());
+    return p.length === 4 ? Number(p[3]) : 1;
+  };
 
-  const navState = JSON.parse(await evalJs(String.raw`(() => {
-    const sec = document.getElementById('aturan');
-    const r = sec ? sec.getBoundingClientRect() : null;
+  /*
+   * Navbar utama sengaja TIDAK dirender di halaman form.
+   *
+   * Alasannya bukan selera: seluruh tautan navbar menunjuk section landing
+   * (`#tentang`, `#aturan`, `#faq`), dan section itu tidak ada di DOM halaman
+   * form - halaman form MENGGANTIKAN landing, bukan menutupinya. Menu yang
+   * diklik lalu tidak melakukan apa pun lebih buruk daripada tidak ada menu.
+   *
+   * Yang diuji: benar-benar tidak dirender. Bukan `opacity: 0`, karena itu
+   * dulu menyisakan tautan tak terlihat yang tetap bisa di-Tab dan diklik -
+   * bug aksesibilitas yang sudah diperbaiki di Navbar dan tidak boleh kembali
+   * lewat halaman form.
+   */
+  const chrome = JSON.parse(await evalJs(String.raw`(() => {
+    const nav = document.querySelector('nav[aria-label="Navigasi utama"]');
+    const back = [...document.querySelectorAll('.register-wrap a[href="#top"]')][0];
+    const r = back ? back.getBoundingClientRect() : null;
+    return JSON.stringify({
+      headerAda: !!document.querySelector('header'),
+      navAda: !!nav,
+      navTautan: document.querySelectorAll('nav[aria-label="Navigasi utama"] a').length,
+      tautanAturan: document.querySelectorAll('.register-wrap a[href="#aturan"]').length,
+      kembaliTeks: back ? back.textContent.trim() : null,
+      kembaliW: r ? Math.round(r.width) : 0,
+      kembaliH: r ? Math.round(r.height) : 0,
+    });
+  })()`));
+
+  check('Halaman form: navbar utama tidak dirender (bukan disembunyikan)',
+    !chrome.headerAda && !chrome.navAda && chrome.navTautan === 0,
+    'header=' + chrome.headerAda + ' nav=' + chrome.navAda + ' tautan=' + chrome.navTautan);
+  check('Halaman form: nol tautan section landing yang menyesatkan',
+    chrome.tautanAturan === 0, chrome.tautanAturan + ' tautan #aturan');
+  check('Halaman form: jalan pulang tersedia sebagai pengganti navbar',
+    !!chrome.kembaliTeks && chrome.kembaliW >= 44 && chrome.kembaliH >= 44,
+    (chrome.kembaliTeks ?? 'tidak ada') + ' ' + chrome.kembaliW + 'x' + chrome.kembaliH);
+
+  /*
+   * Klik jalan pulang itu. Yang diperiksa bukan sekadar "hash berubah", tapi
+   * navbar benar-benar DIPASANG ULANG di landing dan animasinya hidup lagi -
+   * persis yang diminta: hilang di halaman form, kembali utuh di halaman utama.
+   */
+  await clickReal(`document.querySelector('.register-wrap a[href="#top"]')`, 'kembali ke landing');
+  await sleep(2600);
+
+  const after = JSON.parse(await evalJs(String.raw`(() => {
+    const header = document.querySelector('header');
+    const nav = document.querySelector('nav[aria-label="Navigasi utama"]');
     return JSON.stringify({
       hash: location.hash,
       landing: !!document.getElementById('top'),
       sections: document.querySelectorAll('#top section.stack-wrap').length,
-      sectionTop: r ? Math.round(r.top) : null,
-      scrollY: Math.round(window.scrollY),
-      formGone: !document.querySelector('.register-card'),
+      headerAda: !!header,
+      navAda: !!nav,
+      bg: header ? getComputedStyle(header).backgroundColor : null,
+      blur: header ? getComputedStyle(header).backdropFilter : null,
     });
   })()`));
 
-  check('Tautan navbar dari halaman form kembali ke section yang dituju',
-    navState.landing && navState.hash === '#aturan' && navState.formGone,
-    navState.hash + ', ' + navState.sections + ' section');
-  check('Section tujuan benar-benar terlihat (tidak cuma ganti hash)',
-    navState.sectionTop !== null && navState.sectionTop > -200 && navState.sectionTop < 200,
-    'top section ' + navState.sectionTop + 'px dari atas viewport, scrollY ' + navState.scrollY);
+  check('Jalan pulang mengembalikan landing page lengkap',
+    after.landing && after.sections === 8,
+    'hash=' + after.hash + ', ' + after.sections + ' section');
+  check('Navbar terpasang ULANG di halaman utama',
+    after.headerAda && after.navAda,
+    'header=' + after.headerAda + ' nav=' + after.navAda);
+  check('Navbar yang kembali mulai dari keadaan transparan (animasi tidak di-skip)',
+    after.bg !== null && alphaOf(after.bg) < 0.05,
+    after.bg);
+
+  /*
+   * Animasi harus tetap hidup setelah mount ulang: digulir, navbar wajib
+   * berubah jadi kaca - blur + saturate aktif, dan tint-nya tembus pandang
+   * (bukan bar pekat).
+   */
+  await evalJs('window.scrollTo(0, 800); true');
+  await sleep(1800);
+
+  const scrolled = JSON.parse(await evalJs(String.raw`(() => {
+    const header = document.querySelector('header');
+    const cs = header ? getComputedStyle(header) : null;
+    return JSON.stringify({ bg: cs ? cs.backgroundColor : null, blur: cs ? cs.backdropFilter : null });
+  })()`));
+
+  check('Setelah digulir, navbar kembali jadi kaca (blur + saturate + tembus pandang)',
+    scrolled.blur !== null
+      && /blur\(/.test(scrolled.blur) && /saturate\(/.test(scrolled.blur)
+      && alphaOf(scrolled.bg) > 0.05 && alphaOf(scrolled.bg) < 0.75,
+    'alpha=' + alphaOf(scrolled.bg) + ' ' + scrolled.blur);
 }
 
 /* ---------------------------------------------------------------- */

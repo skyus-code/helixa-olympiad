@@ -38,9 +38,13 @@ function MenuIcon({ open }: { open: boolean }) {
 }
 
 /**
- * Batas umur handle requestAnimationFrame. Kalau rAF yang dijadwalkan belum
- * juga jalan setelah ini, dianggap jatuh dan tidak lagi dipercaya sebagai
- * "sudah ada pembaruan terjadwal". See catatan throttle di efek navbar.
+ * Batas tunggu pembaruan terjadwal.
+ *
+ * rAF yang dijadwalkan dianggap jatuh kalau belum juga jalan setelah ini,
+ * dan `setTimeout` penjaga akan mengambil alih. Lihat catatan throttle di
+ * efek navbar: satu rAF yang jatuh pernah membuat navbar tertinggal
+ * transparan setelah halaman digulir, dan tanpa penjaga itu tidak ada
+ * apa pun yang menyusulnya.
  */
 const STALE_MS = 300;
 
@@ -63,50 +67,65 @@ export function Navbar() {
    * sebagai boolean "sudah ada frame_pending".
    *
    * Pola lama (`if (frame) return; frame = requestAnimationFrame(...)`) punya
-   *-mode gagal yang permanen: kalau rAF itu dijatuhkan browser - yang terjadi
+   * mode gagal yang permanen: kalau rAF itu dijatuhkan browser - yang terjadi
    * saat renderer sedang sibuk, tab di-throttle, atau headless sedang
    * mengambil screenshot - callback-nya tidak pernah jalan, jadi penanda
    * `frame` tidak pernah dikembalikan ke 0. Setelah itu SETIAP event scroll
    * berikutnya ditolak, dan navbar tidak pernah berubah lagi sampai halaman
-   * dimuat ulang. Symptom-nyaExactly "navbar tetap transparan padahal sudah
-   * di-scroll", persis yang terpakai.
+   * dimuat ulang. Symptom-nya persis "navbar tetap transparan padahal sudah
+   * di-scroll".
    *
-   * Dengan cap waktu, kegagalan rAF yang terjatuh hanya menunda pembaruan satu
-   * frame: begitu handle dianggap basi (lebih lama dari STALE_MS tanpa pernah
-   * jalan), event scroll berikutnya boleh menjadwalkan rAF baru. Jadi state pulih
-   * sendiri tanpa perlu memuat ulang halaman.
+   * Versi sebelumnya memperbaiki itu dengan cap waktu, tapi masih bergantung
+   * pada SATU event scroll berikutnya: rAF yang dijatuhkan baru pulih kalau
+   * user menggulir lagi. Itu cukup untuk guliran berkelanjutan, tapi tidak
+   * untuk lompatan tunggal seperti `window.scrollTo` - dan lompatan tunggal
+   * itulah yang dipakai deep-link dan pengujian. Terukur: `scrollY` sudah 600,
+   * navbar tetap transparan setelah ditunggu 3 detik.
+   *
+   * Karena itu sekarang ada penjaga: setiap kali pembaruan dijadwalkan, rAF
+   * dipasangkan `setTimeout` dengan batas STALE_MS. Salah satu yang jalan
+   * lebih dulu membatalkan yang lain, dan keduanya menghasilkan nilai yang
+   * sama. Jadi keadaan navbar selalu ikut posisi scroll paling lambat
+   * STALE_MS setelah event scroll terakhir, apa pun yang terjadi pada rAF.
    */
   useEffect(() => {
     const THROTTLE_MS = 100;
-    /** Cap waktu rAF terakhir yang benar-benar JALAN, bukan yang dijadwalkan. */
+    /** Cap waktu pembaruan terakhir yang benar-benar JALAN. */
     let lastRun = 0;
     /** Handle rAF terjadwal, atau 0. */
     let frame = 0;
-    /** Kapan rAF di atas dijadwalkan. Dipakai untuk mengenali frame yang jatuh. */
-    let scheduledAt = 0;
+    /** Handle setTimeout penjaga, atau 0. */
+    let guard = 0;
 
     const run = () => {
-      frame = 0;
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+        frame = 0;
+      }
+      if (guard) {
+        window.clearTimeout(guard);
+        guard = 0;
+      }
       lastRun = performance.now();
       setScrolled(window.scrollY > 40);
     };
 
     const onScroll = () => {
-      const now = performance.now();
-      // Frame sudah menjadwal DAN masih dianggap hidup: jangan antre dua kali.
-      if (frame && now - scheduledAt < STALE_MS) return;
-      // Terlalu baru setelah frame terakhir benar-benar jalan: nilai scrollY
-      // dibaca di dalam rAF, jadi membaca sekarang hanya membuang kerja.
-      if (now - lastRun < THROTTLE_MS) return;
-      scheduledAt = now;
+      // Sudah ada pembaruan terjadwal (rAF atau penjaganya): jangan antre dua kali.
+      if (frame || guard) return;
+      // Terlalu baru setelah pembaruan terakhir: nilai scrollY dibaca di dalam
+      // callback, jadi menjadwalkan sekarang hanya membuang kerja.
+      if (performance.now() - lastRun < THROTTLE_MS) return;
       frame = window.requestAnimationFrame(run);
+      guard = window.setTimeout(run, STALE_MS);
     };
 
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => {
-      if (frame) window.cancelAnimationFrame(frame);
       window.removeEventListener('scroll', onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
+      if (guard) window.clearTimeout(guard);
     };
   }, []);
 
