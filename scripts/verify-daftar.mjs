@@ -174,9 +174,9 @@ console.log('\n=== A1. GERBANG three.js & ISI FORM ===');
     .replace(/\/\/.*$/gm, '');
   /*
    * `name="..."` yang dipakai di sini adalah nama yang benar-benar dibaca
-   * screen reader ("Nama lengkap", bukan "daftar-nama"), dan juga atribut yang
-   * membuat field ini submit-able kalau nanti form-nya punya backend. Jadi
-   * pemeriksaan ini bukan sekadar mencatat field apa saja yang ada.
+   * screen reader ("Nama lengkap", bukan "daftar-nama"), dan juga yang membuat
+   * field ini ikut terkirim saat form disubmit ke server - jadi pemeriksaan ini
+   * bukan sekadar mencatat field apa saja yang ada.
    */
   const wanted = ['nama', 'sekolah', 'kota', 'kelas', 'jurusan', 'wa', 'email', 'bidang', 'setuju'];
   const missing = wanted.filter((w) => !new RegExp('name="' + w + '"').test(form));
@@ -184,17 +184,27 @@ console.log('\n=== A1. GERBANG three.js & ISI FORM ===');
     missing.length ? 'hilang: ' + missing.join(', ') : wanted.join(', '));
 
   /*
-   * Klaim yang paling mudah dijanjikan lalu dilanggar diam-diam: "form ini
-   * belum punya backend".
+   * SATU PINTU KELUAR DARI FORM.
    *
-   * Dua-duanya di sini BUKAN banned-list pustaka - satu skrip tidak boleh
-   *اسكهل punya fetch di halaman lain. Yang diperiksa adalah komponen form
-   * dan modul yang ia panggil: di dalam keduanya tidak boleh ada satu pun
-   * jalur yang meninggalkan browser. Kalau nanti backend benar-benar dipasang,
-   * pemeriksaan ini harus ikut dihapus SEBUKAN dilewati, karena itu perubahan
-   * yang perlu terlihat.
+   * Sampai backend dipasang, pemeriksaan di blok ini berbunyi "tidak ada satu
+   * pun jalan keluar dari browser", karena saat itu memang belum ada backend.
+   * Klaim itu sekarang tidak lagi benar, jadi syaratnya diganti - bukan
+   * dilewati - dengan syarat yang berlaku sekarang: hanya SATU modul yang boleh
+   * menyentuh jaringan, yaitu `src/lib/api.ts`.
+   *
+   * Alasannya bukan kerapian tata letak berkas. Aturan kejujuran situs ini
+   * ("jangan pernah bilang terkirim kalau datanya tidak sampai") hanya bisa
+   * dijamin kalau setiap balasan diperiksa dengan cara yang sama, dan itu cuma
+   * mungkin kalau semua permintaan lewat satu tempat. `fetch` yang ditulis
+   * langsung di komponen lolos dari pemeriksaan bentuk balasan, dan satu
+   * komponen yang lupa memeriksanya sudah cukup untuk menampilkan "Pendaftaran
+   * terkirim" untuk data yang tidak pernah tersimpan.
    */
-  const netCalls = [];
+  const apiText = readFileSync(join(src, 'lib', 'api.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+
+  const leaks = [];
   for (const [rel, text] of [
     ['components/RegistrationPage.tsx', form],
     ['components/OlympiadScene.tsx', wrapper.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')],
@@ -205,13 +215,16 @@ console.log('\n=== A1. GERBANG three.js & ISI FORM ===');
       ['sendBeacon', /sendBeacon/],
       ['img src ke luar (pixel apical)', /<img\b[^>]*\bsrc=/i],
       ['action= pada form', /\baction=/],
-    ]) if (re.test(text)) netCalls.push(rel + ': ' + what);
+    ]) if (re.test(text)) leaks.push(rel + ': ' + what);
   }
-  check('Tidak ada jalur yang mengirim data dari form (belum ada backend)', netCalls.length === 0,
-    netCalls.length ? netCalls.join(', ') : 'nol fetch/XHR/beacon/action/img di komponen form');
+  check('Komponen form tidak menyentuh jaringan sendiri', leaks.length === 0,
+    leaks.length ? leaks.join(', ') : 'nol fetch/XHR/beacon/action/img di komponen form');
+  check('Jalur keluar tunggalnya ada di src/lib/api.ts',
+    /\bfetch\s*\(/.test(apiText), /\bfetch\s*\(/.test(apiText) ? 'fetch ditemukan' : 'TIDAK ADA fetch');
 
-  check('Pengakuan "belum dikirim" ada di konten, bukan disembunyikan',
-    /notSentTitle/.test(content) && /notSentBody/.test(content));
+  check('Kedua hasil kirim ada di konten, bukan disembunyikan',
+    /notSentTitle/.test(content) && /notSentBody/.test(content) &&
+    /sentTitle/.test(content) && /sentBody/.test(content));
 }
 
 /* ==================================================================
@@ -1081,7 +1094,93 @@ console.log('\n=== B4. KONTRAS WCAG DI ATAS SCENE YANG BERGERAK ===');
           'px tertutup scene)').join(' | ')));
 }
 
-console.log('\n=== B5. VALIDASI, AKSESIBILITAS, DAN KEJUJURAN "BELUM DIKIRIM" ===');
+/* --------------------------------------------------------------------------
+   Alat bantu B5: menghubungi API dan database dari sisi Node.
+
+   Form pendaftaran sekarang menulis ke MySQL lewat API. Itu mengubah sifat
+   pengujiannya: satu kirim yang sah MENGUBAH data, bukan sekadar mengubah
+   tampilan. Karena itu uji ini harus bisa menjawab tiga pertanyaan yang tidak
+   bisa dijawab dari DOM saja - apakah API hidup, apakah barisnya benar-benar
+   masuk, dan bagaimana membuang baris itu lagi. Kalau tidak bisa, uji ini akan
+   meninggalkan sampah di database orang.
+   -------------------------------------------------------------------------- */
+
+const TEST_EMAIL = 'rangga@smne3.sch.id';
+const TEST_WA_DIGITS = '628123456789';
+
+/** Konfigurasi MySQL, sama dengan `server/db.js`. */
+function dbConfig() {
+  return {
+    host: process.env.DB_HOST ?? '127.0.0.1',
+    port: Number(process.env.DB_PORT ?? 3306),
+    user: process.env.DB_USER ?? 'root',
+    password: process.env.DB_PASSWORD ?? '',
+    database: process.env.DB_NAME ?? 'helixa_olympiad',
+  };
+}
+
+/**
+ * Apakah API hidup DAN databasenya bisa dihubungi.
+ *
+ * `/api/health` menjawab `ok: true` hanya setelah `SELECT 1` berhasil, jadi satu
+ * permintaan ini cukup untuk membedakan tiga keadaan: API hidup, API hidup tapi
+ * database mati, dan API tidak ada.
+ */
+async function apiReachable() {
+  try {
+    const res = await fetch('http://localhost:4000/api/health', {
+      signal: AbortSignal.timeout(2000),
+    });
+    if (res.status !== 200) return false;
+    const body = await res.json();
+    return body?.ok === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Hapus baris uji. Mengembalikan jumlah baris yang dihapus, atau -1 kalau
+ * database tidak bisa dihubungi (keadaan yang sah: uji tetap jalan tanpa API).
+ */
+async function dropTestRows() {
+  try {
+    const mysql = await import('mysql2/promise');
+    const conn = await mysql.createConnection(dbConfig());
+    const [res] = await conn.execute('DELETE FROM `registrations` WHERE `email` = ?', [TEST_EMAIL]);
+    await conn.end();
+    return res.affectedRows;
+  } catch {
+    return -1;
+  }
+}
+
+/** Baca kembali baris uji untuk membuktikan datanya benar-benar tersimpan. */
+async function selectTestRow() {
+  try {
+    const mysql = await import('mysql2/promise');
+    const conn = await mysql.createConnection(dbConfig());
+    const [rows] = await conn.execute(
+      'SELECT `nama`, `wa`, `bidang` FROM `registrations` WHERE `email` = ? ORDER BY `id` DESC LIMIT 1',
+      [TEST_EMAIL],
+    );
+    await conn.end();
+    return rows[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Baris uji dibersihkan SEBELUM submit: `UNIQUE (email, bidang)` membuat kiriman
+// kedua pada bidang yang sama dijawab 409, jadi sisa jalan sebelumnya akan
+// mengubah hasil uji ini menjadi "sudah terdaftar" - dan yang diuji jadi bukan
+// lagi jalur simpan.
+const preCleaned = await dropTestRows();
+const apiUp = await apiReachable();
+console.log('  (API ' + (apiUp ? 'hidup' : 'tidak hidup') + '; pembersihan awal ' +
+  (preCleaned < 0 ? 'tidak bisa (database tidak dihubungi)' : preCleaned + ' baris dihapus') + ')');
+
+console.log('\n=== B5. VALIDASI, AKSESIBILITAS, DAN KIRIM KE DATABASE ===');
 {
   const labels = JSON.parse(await evalJs(String.raw`(() => {
     const out = [];
@@ -1100,8 +1199,7 @@ console.log('\n=== B5. VALIDASI, AKSESIBILITAS, DAN KEJUJURAN "BELUM DIKIRIM" ==
         describedBy: el.getAttribute('aria-describedby'),
       });
     }
-    return JSON.stringify({ fields: out, fieldset: !!document.querySelector('.register-card fieldset legend'),
-      liveStatus: !!document.querySelector('[role="status"][aria-live="polite"]') });
+    return JSON.stringify({ fields: out, fieldset: !!document.querySelector('.register-card fieldset legend') });
   })()`));
 
   check('Setiap field punya nama yang bisa diprogram (label terikat atau membungkus)',
@@ -1112,8 +1210,6 @@ console.log('\n=== B5. VALIDASI, AKSESIBILITAS, DAN KEJUJURAN "BELUM DIKIRIM" ==
   check('Target sentuh semua field >= 44px (nyaman di layar kecil)',
     labels.fields.every((f) => (f.minHeight >= 44)),
     labels.fields.map((f) => f.id + '=' + f.minHeight).join(' '));
-  check('Panel hasil punya aria-live polite',
-    !!labels.liveStatus);
 
   // Submit kosong: harus gagal validasi dan tidak mengirim apa pun.
   const beforeSubmit = requested.length;
@@ -1173,11 +1269,15 @@ console.log('\n=== B5. VALIDASI, AKSESIBILITAS, DAN KEJUJURAN "BELUM DIKIRIM" ==
   await sleep(700);
 
   const validSubmit = JSON.parse(await evalJs(String.raw`(() => {
-    const status = document.querySelector('[role="status"][aria-live="polite"]');
+    const panel = document.querySelector('[data-outcome]');
     const ta = document.getElementById('ringkasan');
     return JSON.stringify({
-      hasStatus: !!status,
-      statusText: status ? status.textContent.replace(/\s+/g, ' ').trim().slice(0, 160) : null,
+      hasStatus: !!panel,
+      statusIsLive: panel
+        ? panel.getAttribute('role') === 'status' && panel.getAttribute('aria-live') === 'polite'
+        : false,
+      outcome: panel ? panel.getAttribute('data-outcome') : null,
+      statusText: panel ? panel.textContent.replace(/\s+/g, ' ').trim().slice(0, 200) : null,
       summary: ta ? ta.value : null,
       stillInvalid: document.querySelectorAll('.register-card [aria-invalid="true"]').length,
     });
@@ -1186,15 +1286,55 @@ console.log('\n=== B5. VALIDASI, AKSESIBILITAS, DAN KEJUJURAN "BELUM DIKIRIM" ==
   check('Form yang valid lolos validasi dan menampilkan ringkasan',
     validSubmit.hasStatus && !!validSubmit.summary && validSubmit.summary.includes('Rangga Aulia'),
     validSubmit.summary ? validSubmit.summary.split('\n')[0] : 'tidak ada ringkasan');
-  check('Panel jujur menyatakan data belum terkirim ke mana pun',
-    /belum dikirim|tidak terkirim|belum ada server/i.test(validSubmit.statusText ?? ''),
-    (validSubmit.statusText ?? '').slice(0, 120));
-  check('Nomor WhatsApp dinormalisasi & ringkasan terbaca',
-    /0[0-9]{9,12}/.test(validSubmit.summary ?? ''),
+  check('Panel hasil punya aria-live polite',
+    validSubmit.statusIsLive, 'role/aria-live=' + validSubmit.statusIsLive);
+
+  /*
+   * DUA HASIL YANG SAH
+   * ------------------
+   * Yang dituntut bukan satu hasil tertentu, tapi hasil yang SESUAI dengan
+   * keadaan yang diukur lebih dulu (`apiUp`). Kalau server hidup dan databasenya
+   * bisa dihubungi, submit yang sah WAJIB berakhir "terkirim" - kalau tidak,
+   * ada jalur yang diam-diam menelan data. Kalau server tidak ada, yang benar
+   * justru sebaliknya.
+   */
+  if (apiUp) {
+    check('Submit valid menulis satu baris ke server (outcome "sent")',
+      validSubmit.outcome === 'sent',
+      'outcome=' + validSubmit.outcome + ' | ' + (validSubmit.statusText ?? ''));
+  } else {
+    check('API tidak hidup: submit valid jujur menyatakan belum tersimpan',
+      validSubmit.outcome === 'notsent' || validSubmit.outcome === 'failed',
+      'outcome=' + validSubmit.outcome);
+  }
+
+  const apiCalls = requested.slice(beforeSubmit).filter((u) => /\/api\/register/.test(u));
+  check('Submit valid mengirim tepat satu permintaan ke /api/register',
+    apiCalls.length === 1,
+    apiCalls.length + ' permintaan: ' + apiCalls.join(' | '));
+  check('Tidak ada permintaan jaringan lain yang menyertai submit',
+    requested.length - beforeSubmit === apiCalls.length,
+    'selisih ' + (requested.length - beforeSubmit) + ' permintaan, ' + apiCalls.length + ' ke /api/register');
+
+  check('Nomor WhatsApp terbaca di ringkasan yang disalin user',
+    /62\d{8,13}|0\d{9,12}/.test(validSubmit.summary ?? ''),
     (validSubmit.summary ?? '').split('\n').find((l) => /wa|WhatsApp/i.test(l)) ?? '');
-  check('Submit valid tetap tidak mengirim apa pun (UI saja dulu)',
-    requested.length === beforeSubmit,
-    requested.length - beforeSubmit + ' permintaan jaringan tambahan setelah submit valid');
+
+  /*
+   * Bukti dari sisi database, bukan dari sisi tampilan. Ini yang membedakan
+   * "halaman menampilkan pesan berhasil" dari "datanya benar-benar ada" - dan
+   * itu justru inti permintaan fitur ini.
+   */
+  if (apiUp) {
+    const row = await selectTestRow();
+    check('Barisnya benar-benar ada di MySQL, WA dinormalisasi ke 62...',
+      !!row && row.wa === TEST_WA_DIGITS && row.bidang === 'Matematika',
+      row ? 'wa=' + row.wa + ' bidang=' + row.bidang : 'baris tidak ditemukan');
+
+    const removed = await dropTestRows();
+    check('Baris uji dibersihkan lagi dari database',
+      removed >= 1, removed + ' baris dihapus');
+  }
 }
 
 console.log('\n=== B6. KEMBALI KE LANDING, DAN LOOP 3D YANG HARUS MATI ===');

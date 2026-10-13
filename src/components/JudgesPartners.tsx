@@ -10,8 +10,27 @@ import { Eyebrow } from './ui/Eyebrow';
 import { RevealGroup } from './ui/Reveal';
 import { SpotlightCard } from './ui/SpotlightCard';
 import { JUDGES } from '../content';
+import { peopleCards, useSiteContent } from '../lib/siteContent';
 
 export function JudgesPartners() {
+  const { people } = useSiteContent();
+  /*
+   * Kalau database punya isi, itulah yang ditampilkan. Kalau tidak (API mati
+   * atau tabel masih kosong), daftar bawaan di content.ts yang dipakai. Urutan
+   * ini penting: mengosongkan tabel TIDAK boleh membuat section ini kosong,
+   * karena halaman publik tidak boleh bergantung pada server yang hidup.
+   */
+  const fromDb = peopleCards(people);
+  const items =
+    fromDb.length > 0
+      ? fromDb
+      : JUDGES.items.map((person, index) => ({
+          key: 'bawaan-' + index,
+          kind: person.kind,
+          monogram: person.monogram,
+          name: person.name,
+          role: person.role,
+        }));
   return (
     <Section id="juri" z={50} card>
       <Eyebrow>{JUDGES.eyebrow}</Eyebrow>
@@ -23,8 +42,8 @@ export function JudgesPartners() {
       <p className="mt-5 max-w-[46ch] text-bone-dim">{JUDGES.lead}</p>
 
       <RevealGroup className="mt-14 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {JUDGES.items.map((person) => (
-          <SpotlightCard key={person.monogram} as="div" className="flex flex-col gap-5 p-7">
+        {items.map((person) => (
+          <SpotlightCard key={person.key} as="div" className="flex flex-col gap-5 p-7">
             <span
               aria-hidden="true"
               className="flex h-14 w-14 items-center justify-center rounded-full border border-gold-line-strong font-display text-2xl font-semibold text-gold"

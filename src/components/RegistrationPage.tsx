@@ -17,10 +17,12 @@
  *    kotak sendiri, jadi legibilitasnya dijamin oleh arsitektur, bukan oleh
  *    penyetelan angka.
  *
- * 3. Tombol kirim TIDAK diam-diam menelepon server yang tidak ada. Validasi
- *    form tetap berjalan, lalu hasilnya adalah pengakuan jujur bahwa data
- *    belum terkirim ke mana pun, ditambah ringkasan yang bisa disalin sendiri.
- *    Alasan lengkapnya ada di content.ts.
+ * 3. Tombol kirim benar-benar mengirim ke API (`/api/register`), dan pesan
+ *    "terkirim" HANYA muncul kalau server mengembalikan `id` baris yang
+ *    dibuat. Kalau API tidak ada - yang memang terjadi pada build statis
+ *    tanpa server - hasilnya adalah pengakuan jujur bahwa datanya belum
+ *    tersimpan, ditambah ringkasan yang bisa disalin sendiri. Alasan
+ *    lengkapnya ada di content.ts.
  *
  * 4. a11y form: setiap input punya <label>, setiap pesan error terhubung lewat
  *    `aria-describedby`, ada ringkasan error `role="alert"` yang bisa diklik
@@ -29,6 +31,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { REGISTRATION } from '../content';
+import { submitRegistration } from '../lib/api';
 import { Eyebrow } from './ui/Eyebrow';
 import { Reveal } from './ui/Reveal';
 import { OlympiadScene } from './OlympiadScene';
@@ -46,6 +49,15 @@ type Values = {
 };
 
 type FieldName = keyof Values;
+
+/**
+ * Hasil pengiriman terakhir.
+ *
+ * `notsent` sengaja bukan `failed`: "server tidak ada" dan "server menolak"
+ * adalah dua hal berbeda bagi user. Yang pertama berarti datanya harus disimpan
+ * sendiri, yang kedua berarti isiannya perlu diperbaiki.
+ */
+type Outcome = 'sent' | 'duplicate' | 'failed' | 'notsent';
 
 const EMPTY: Values = {
   nama: '',
@@ -80,6 +92,14 @@ const LABELS: Record<FieldName, string> = {
   email: REGISTRATION.fields.email.label,
   bidang: REGISTRATION.fields.bidangLabel,
   setuju: REGISTRATION.fields.setujuLabel,
+};
+
+/** Judul dan isi panel hasil, dipilih dari `outcome`. */
+const RESULT: Record<Outcome, { title: string; body: string }> = {
+  sent: { title: REGISTRATION.sentTitle, body: REGISTRATION.sentBody },
+  duplicate: { title: REGISTRATION.duplicateTitle, body: REGISTRATION.duplicateBody },
+  failed: { title: REGISTRATION.failedTitle, body: REGISTRATION.failedBody },
+  notsent: { title: REGISTRATION.notSentTitle, body: REGISTRATION.notSentBody },
 };
 
 /**
@@ -194,11 +214,19 @@ async function copyText(text: string): Promise<boolean> {
 export function RegistrationPage() {
   const [values, setValues] = useState<Values>(EMPTY);
   const [errors, setErrors] = useState<Partial<Record<FieldName, string>>>({});
-  const [submitted, setSubmitted] = useState(false);
+  /**
+   * Hasil percobaan kirim terakhir.
+   *
+   * `null` = belum pernah mengirim atau submit terakhir gagal validasi.
+   * `sending` dipisah dari `outcome` karena keduanya bisa benar bersamaan:
+   * permintaan sedang jalan sementara panel hasil lama masih tampil.
+   */
+  const [sending, setSending] = useState(false);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [copied, setCopied] = useState(false);
 
   const headingRef = useRef<HTMLHeadingElement | null>(null);
-  const summaryRef = useRef<HTMLTextAreaElement | null>(null);
+  const resultRef = useRef<HTMLDivElement | null>(null);
   const copyTimer = useRef(0);
 
   /*
@@ -215,7 +243,17 @@ export function RegistrationPage() {
 
   useEffect(() => () => window.clearTimeout(copyTimer.current), []);
 
-  const summary = useMemo(() => (submitted ? buildSummary(values) : ''), [submitted, values]);
+  /*
+   * Ringkasan hanya dibangun kalau akan ditampilkan. Isinya sama dengan isian
+   * form, dan membangunnya di setiap ketikan berarti satu string panjang dibuat
+   * ulang untuk setiap huruf yang diketik - pekerjaan yang tidak pernah dilihat
+   * siapa pun sampai tombol Kirim ditekan.
+   */
+  const showSummary = outcome === 'sent' || outcome === 'notsent' || outcome === 'failed';
+  const summary = useMemo(
+    () => (showSummary ? buildSummary(values) : ''),
+    [showSummary, values],
+  );
 
   function set<K extends FieldName>(key: K, value: Values[K]) {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -231,30 +269,69 @@ export function RegistrationPage() {
     });
   }
 
-  function onSubmit(e: React.FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (sending) return;
+
     const found = validate(values);
     setErrors(found);
     const bad = ORDER.find((k) => found[k]);
     if (bad) {
-      setSubmitted(false);
+      setOutcome(null);
       document.getElementById('daftar-' + bad)?.focus();
       return;
     }
-    setSubmitted(true);
+
+    setSending(true);
+    setOutcome(null);
+
     /*
-     * TITIK PASANG BACKEND.
+     * SATU-SATUNYA TITIK KIRIM.
      *
-     * Panel ini satu-satunya tempat yang perlu disentuh kalau pendaftaran
-     * dibuka. Cukup ganti `setSubmitted(true)` dengan:
-     *
-     *   const res = await fetch(REGISTER_URL, { method: 'POST', ... });
-     *   if (!res.ok) { setErrors({ nama: 'Server menolak, coba lagi.' }); return; }
-     *
-     * dan REGISTER_URL di content.ts diisi endpoint aslinya. Pesan "belum
-     * terkirim" di content.ts ikut dihapus saat itu.
+     * `submitRegistration` menganggap berhasil HANYA kalau server
+     * mengembalikan `id` baris yang dibuat. Itu yang membuat pesan "terkirim"
+     * tidak bisa muncul untuk data yang tidak tersimpan - termasuk pada build
+     * statis, di mana `/api/register` dijawab `index.html` dengan status 200.
      */
-    window.setTimeout(() => summaryRef.current?.focus(), 0);
+    const reply = await submitRegistration({
+      nama: values.nama.trim(),
+      sekolah: values.sekolah.trim(),
+      kota: values.kota.trim(),
+      kelas: values.kelas,
+      jurusan: values.jurusan,
+      wa: values.wa.trim(),
+      email: values.email.trim(),
+      bidang: values.bidang,
+      setuju: values.setuju,
+    });
+
+    setSending(false);
+
+    if (reply.ok) {
+      setOutcome('sent');
+    } else if (reply.status === 409) {
+      // Server sudah tahu artinya; pesannya lebih tepat daripada tebakan klien.
+      setOutcome('duplicate');
+    } else if (reply.status === 0) {
+      setOutcome('notsent');
+    } else if (reply.status === 400 && Object.keys(reply.fields).length > 0) {
+      /*
+       * Server memvalidasi ulang, dan itu bisa berbeda dari validasi klien
+       * (mis. aturan baru di server yang belum ada di browser ini). Pesannya
+       * ditempelkan ke field yang bersangkutan supaya user tahu harus
+       * memperbaiki yang mana, bukan menerima satu pesan umum.
+       */
+      const serverErrors = reply.fields as Partial<Record<FieldName, string>>;
+      setErrors(serverErrors);
+      setOutcome(null);
+      const first = ORDER.find((k) => serverErrors[k]);
+      if (first) document.getElementById('daftar-' + first)?.focus();
+      return;
+    } else {
+      setOutcome('failed');
+    }
+
+    window.setTimeout(() => resultRef.current?.focus(), 0);
   }
 
   async function onCopy() {
@@ -455,46 +532,61 @@ export function RegistrationPage() {
 
               <button
                 type="submit"
-                className="btn btn-shimmer bg-gold-gradient mt-7 flex min-h-12 w-full items-center justify-center rounded-full px-6 text-[0.9375rem] font-semibold text-ink shadow-[0_10px_30px_-14px_rgba(212,175,55,0.45)]"
+                disabled={sending}
+                className="btn btn-shimmer bg-gold-gradient mt-7 flex min-h-12 w-full items-center justify-center rounded-full px-6 text-[0.9375rem] font-semibold text-ink shadow-[0_10px_30px_-14px_rgba(212,175,55,0.45)] disabled:opacity-70"
               >
-                {REGISTRATION.submitLabel}
+                {sending ? REGISTRATION.submittingLabel : REGISTRATION.submitLabel}
               </button>
 
               {/*
-               * PENGAKUAN HONEST.
+               * PANEL HASIL.
                *
                * `role="status"` dengan `aria-live="polite"`: muncul setelah
                * onSubmit selesai, bukan di tengah-tengah pengetikan, jadi tidak
                * perlu membatalkan apa pun yang sedang dibaca screen reader.
+               * Fokus dipindahkan ke panel ini supaya perubahan piksel di layar
+               * juga sampai ke pembaca layar.
                */}
-              {submitted && (
+              {outcome && (
                 <div
+                  ref={resultRef}
                   role="status"
                   aria-live="polite"
-                  className="mt-6 rounded-2xl border border-gold-line-strong bg-ink-deep/90 p-4"
+                  tabIndex={-1}
+                  data-outcome={outcome}
+                  className={
+                    'mt-6 rounded-2xl border p-4 outline-none ' +
+                    (outcome === 'sent'
+                      ? 'border-gold/55 bg-gold/8'
+                      : 'border-gold-line-strong bg-ink-deep/90')
+                  }
                 >
                   <p className="text-sm font-semibold text-gold-bright">
-                    {REGISTRATION.notSentTitle}
+                    {RESULT[outcome].title}
                   </p>
-                  <p className="mt-2 text-sm text-bone-dim">{REGISTRATION.notSentBody}</p>
-                  <label className="sr-only" htmlFor="ringkasan">
-                    {REGISTRATION.summaryHeading}
-                  </label>
-                  <textarea
-                    ref={summaryRef}
-                    id="ringkasan"
-                    readOnly
-                    rows={10}
-                    value={summary}
-                    className="field mt-3 text-xs leading-relaxed"
-                  />
-                  <button
-                    type="button"
-                    onClick={onCopy}
-                    className="btn mt-3 inline-flex min-h-11 items-center justify-center rounded-full border border-gold/30 px-5 text-sm font-semibold text-bone hover:border-gold/55 hover:bg-gold/8"
-                  >
-                    {copied ? REGISTRATION.copiedLabel : REGISTRATION.copyLabel}
-                  </button>
+                  <p className="mt-2 text-sm text-bone-dim">{RESULT[outcome].body}</p>
+
+                  {showSummary && (
+                    <>
+                      <label className="sr-only" htmlFor="ringkasan">
+                        {REGISTRATION.summaryHeading}
+                      </label>
+                      <textarea
+                        id="ringkasan"
+                        readOnly
+                        rows={10}
+                        value={summary}
+                        className="field mt-3 text-xs leading-relaxed"
+                      />
+                      <button
+                        type="button"
+                        onClick={onCopy}
+                        className="btn mt-3 inline-flex min-h-11 items-center justify-center rounded-full border border-gold/30 px-5 text-sm font-semibold text-bone hover:border-gold/55 hover:bg-gold/8"
+                      >
+                        {copied ? REGISTRATION.copiedLabel : REGISTRATION.copyLabel}
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </form>

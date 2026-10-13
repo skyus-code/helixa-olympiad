@@ -8,6 +8,12 @@ node_modules/.tmp
 *.tsbuildinfo
 screenshots
 
+# Rahasia server: password database, password admin, secret token. Contoh
+# nilainya ada di .env.example, yang ikut di-commit; file ini tidak.
+.env
+.env.*
+!.env.example
+
 # Laporan Lighthouse: hasil ukur sekali pakai, bukan sumber. Skrip
 # scripts/lighthouse.mjs menulis lh.json di akar proyek.
 lh*.json

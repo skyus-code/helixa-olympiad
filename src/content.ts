@@ -266,29 +266,37 @@ export const REGISTRATION = {
     setujuLabel: 'Saya sudah membaca Aturan & Transparansi dan menyetujui syaratnya.',
   },
   submitLabel: 'Kirim pendaftaran',
+  /** Tombol saat menunggu balasan server. */
+  submittingLabel: 'Mengirim...',
   /**
-   * Keadaan jujur saat ini.
+   * DUA KEMUNGKINAN HASIL, DAN KEDUANYA JUJUR
+   * -----------------------------------------
+   * 1. Server menerima data -> `sentTitle`/`sentBody`. Barisnya benar-benar
+   *    masuk tabel `registrations`, dan pesan itu baru muncul setelah server
+   *    mengembalikan `id` baris yang dibuat. Balasan yang tidak memuat `id`
+   *    tidak dihitung berhasil (lihat src/lib/api.ts).
+   * 2. Server tidak ada atau menolak -> `notSentTitle`/`notSentBody`. Ini yang
+   *    terjadi pada build statis tanpa API, pada API yang hidup tapi
+   *    database-nya mati, dan pada permintaan yang tidak pernah sampai.
+   *    Isian user ditampilkan sebagai ringkasan yang bisa disalin, karena
+   *    waktu yang sudah dipakai mengisi form tidak boleh hilang tanpa jejak.
    *
-   * Dua hal terjadi berurutan, dan keduanya perlu disebutkan:
-   *   1. Halaman ini belum punya backend. Tidak ada endpoint, tidak ada API,
-   *      tidak ada layanan formulir. Data yang diketik user tidak terkirim ke
-   *      mana pun: tidak disimpan di server kami, tidak sampai ke email siapa
-   *      pun, dan tidak tersimpan di perangkat kami.
-   *   2. Karena itu tombolnya tetap dinyalakan dan validasinya tetap jalan, tapi
-   *      hasilnya adalah ringkasan yang bisa disalin sendiri, disertai
-   *      peringatan yang sama jujurnya.
-   *
-   * Menyembunyikan kenyataan ini lebih cepat, tapi akibatnya user mengisi seluruh
-   * form, menekan tombol, lalu melihat "Berhasil!" padahal datanya hilang.
-   * Itu jauh lebih mahal daripada satu kalimat pengakuan.
-   *
-   * Nanti ketika backend-nya siap, tidak ada perubahan yang perlu dilakukan di
-   * komponen ini: cukup ganti isi pesan ini dan tambahkan pemanggilan kirim di
-   * satu tempat (lihat catatan di RegistrationPage.tsx).
+   * `duplicate*` menangani kasus yang paling sering terjadi setelah itu: orang
+   * yang menekan Kirim dua kali atau mendaftar ulang dengan email yang sama.
+   * Itu bukan kesalahan user, jadi pesannya menjelaskan, bukan menyalahkan.
    */
-  notSentTitle: 'Belum dikirim ke mana pun',
+  notSentTitle: 'Belum terkirim - simpan dulu isian Anda',
   notSentBody:
-    'Form ini sudah divalidasi, tapi pendaftaran belum dibuka: belum ada server yang menerima data. Yang tampil di bawah adalah ringkasan isian Anda - belum tersimpan di perangkat ini dan belum sampai ke siapa pun. Salin dan simpan sendiri, atau tunggu sampai pendaftaran dibuka.',
+    'Server pendaftaran tidak bisa dihubungi, jadi data ini belum tersimpan di mana pun. Yang tampil di bawah adalah ringkasan isian Anda; salin dan simpan sendiri, atau coba kirim lagi sebentar lagi.',
+  sentTitle: 'Pendaftaran terkirim',
+  sentBody:
+    'Data Anda sudah tersimpan. Panitia akan menghubungi lewat WhatsApp atau email untuk tautan grup teknis ujian. Simpan ringkasan di bawah sebagai bukti pendaftaran.',
+  duplicateTitle: 'Email ini sudah terdaftar',
+  duplicateBody:
+    'Email tersebut sudah pernah didaftarkan untuk bidang yang sama, jadi tidak perlu mengirim lagi. Kalau ada data yang perlu diperbaiki, hubungi panitia.',
+  failedTitle: 'Gagal dikirim',
+  failedBody:
+    'Server menolak pendaftaran ini. Periksa kembali isian Anda, lalu coba kirim sekali lagi.',
   copyLabel: 'Salin ringkasan',
   copiedLabel: 'Tersalin',
   backLabel: 'Kembali ke halaman utama',

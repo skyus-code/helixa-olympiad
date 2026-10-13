@@ -33,20 +33,34 @@ import { useEffect, useState } from 'react';
 import { REGISTRATION } from '../content';
 
 /** Nama route di dalam aplikasi. Tidak sama dengan hash di URL. */
-export type RouteName = 'landing' | 'daftar';
+export type RouteName = 'landing' | 'daftar' | 'admin';
 
 /**
  * Peta hash -> route.
  *
- * Sengaja hanya satu entri. Menambah halaman kedua nanti cukup satu baris,
- * tapi sampai itu terjadi tidak ada kerangka router yang lebih besar dari ini
- * yang perlu dirawat.
- *
  * Nilainya harus berbeda dari setiap `id` section di landing page. Syarat dan
  * bukti kasus yang terjadi ada di header file.
+ *
+ * `admin` sengaja tidak dipromosikan di mana pun di halaman publik: halaman
+ * itu hanya berguna bagi pengurus, dan halaman yang tidak ditautkan tidak
+ * ditemukan pengunjung yang tidak mencarinya.
  */
 const ROUTES: Record<string, RouteName> = {
   pendaftaran: 'daftar',
+  admin: 'admin',
+};
+
+/**
+ * Judul tab per halaman. Halaman yang tidak terdaftar memakai judul landing.
+ *
+ * `baseTitle` diambil dari judul yang sudah dipasang `index.html`, bukan
+ * ditulis ulang di sini: judul itu juga yang dibaca mesin pencari dan yang
+ * tampil sebelum JavaScript jalan, dan dua sumber untuk satu judul akan
+ * berbeda begitu salah satunya diubah.
+ */
+const ROUTE_TITLES: Partial<Record<RouteName, string>> = {
+  daftar: REGISTRATION.pageTitle,
+  admin: 'Panel Admin - Helixa Olympiad',
 };
 
 /** Hash tanpa tanda `#`, sudah di-decode. String mentah kalau gagal decode. */
@@ -140,7 +154,8 @@ export function useHashRoute(): RouteName {
 
   useEffect(() => {
     if (landingTitle === null) landingTitle = document.title;
-    document.title = route === 'daftar' ? REGISTRATION.pageTitle : landingTitle;
+    const baseTitle = landingTitle;
+    document.title = ROUTE_TITLES[route] ?? baseTitle;
 
     /*
      * POSISI SCROLL

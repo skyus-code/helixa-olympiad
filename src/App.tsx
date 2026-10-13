@@ -1,15 +1,16 @@
 /**
  * Komposisi aplikasi.
  *
- * Dua tampilan, dipilih dari hash URL - bukan router, dan tidak ada dependensi
+ * Tiga tampilan, dipilih dari hash URL - bukan router, dan tidak ada dependensi
  * baru. `useHashRoute()` membaca hash sekali saat render pertama, jadi membuka
- * `#daftar` langsung memunculkan halaman form tanpa kedipan halaman utama
- * lebih dulu.
+ * `#daftar` atau `#admin` langsung memunculkan halamannya tanpa kedipan halaman
+ * utama lebih dulu.
  *
  * Urutan tidak lagi punya provider scroll: halaman memakai scroll native
  * browser. Dari belakang ke depan:
  *   Navbar            -> fixed, berganti solid+blur saat scroll. Hanya di
- *                        halaman utama; halaman form tidak memakainya.
+ *                        halaman utama; halaman form dan panel admin tidak
+ *                        memakainya.
  *   main #top         -> seluruh section stacking (kartu menumpuk CSS).
  *   Footer            -> di luar main, mengikuti setelah CTA.
  *   GrainOverlay      -> dekoratif, paling atas, pointer-events none.
@@ -41,12 +42,14 @@ import { ClosingCta, Footer } from './components/ClosingCta';
 import { CursorLayer } from './components/CursorLayer';
 import { GrainOverlay } from './components/ornaments/GrainOverlay';
 import { RegistrationPage } from './components/RegistrationPage';
+import { AdminPanel } from './components/AdminPanel';
 import { useSmoothScroll } from './hooks/useSmoothScroll';
 import { useHashRoute } from './hooks/useHashRoute';
 
 export default function App() {
   const route = useHashRoute();
   const onLanding = route === 'landing';
+  const onRegister = route === 'daftar';
 
   // Smooth scroll (GSAP ticker, hanya mode 'rich' DAN hanya di halaman utama).
   // ScrollPosition tetap native supaya `position: sticky` di section overlap
@@ -56,7 +59,7 @@ export default function App() {
   // Skip-link harus mengarah ke konten halaman yang sedang tampil. Menunjuk
   // `#top` selalu di halaman form akan gagal: tidak ada elemen itu di sana, dan
   // browser tidak melakukan apa-apa pada hash yang tidak menunjuk elemen.
-  const skipHref = onLanding ? '#tentang' : '#daftar-nama';
+  const skipHref = onLanding ? '#tentang' : onRegister ? '#daftar-nama' : '#admin-panel';
 
   return (
     <>
@@ -99,8 +102,10 @@ export default function App() {
 
           <Footer />
         </>
-      ) : (
+      ) : onRegister ? (
         <RegistrationPage />
+      ) : (
+        <AdminPanel />
       )}
 
       <GrainOverlay />

@@ -16,8 +16,11 @@ import { Eyebrow } from './ui/Eyebrow';
 import { RevealGroup } from './ui/Reveal';
 import { PrimaryButton } from './ui/Buttons';
 import { PERDANA } from '../content';
+import { perdanaDetails, useSiteContent } from '../lib/siteContent';
 
 export function PerdanaInfo() {
+  const { settings } = useSiteContent();
+  const details = perdanaDetails(settings);
   return (
     <Section id="perdana" z={30} stack card>
       <div className="grid gap-12 lg:grid-cols-[1fr_1.05fr] lg:gap-16">
@@ -41,7 +44,7 @@ export function PerdanaInfo() {
         </div>
 
         <RevealGroup className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {PERDANA.details.map((d) => (
+          {details.map((d) => (
             <div
               key={d.label}
               className="flex flex-col gap-2 rounded-2xl border border-gold-line bg-surface p-6 transition-colors duration-300 ease-out hover:border-gold-line-strong hover:bg-ink/60"
