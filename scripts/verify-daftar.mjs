@@ -1106,7 +1106,8 @@ console.log('\n=== B4. KONTRAS WCAG DI ATAS SCENE YANG BERGERAK ===');
    -------------------------------------------------------------------------- */
 
 const TEST_EMAIL = 'rangga@smne3.sch.id';
-const TEST_WA_DIGITS = '628123456789';
+/** '+62 812-3456-7890' setelah dinormalisasi server: 13 digit, diawali 62. */
+const TEST_WA_DIGITS = '6281234567890';
 
 /** Konfigurasi MySQL, sama dengan `server/db.js`. */
 function dbConfig() {
@@ -1316,9 +1317,16 @@ console.log('\n=== B5. VALIDASI, AKSESIBILITAS, DAN KIRIM KE DATABASE ===');
     requested.length - beforeSubmit === apiCalls.length,
     'selisih ' + (requested.length - beforeSubmit) + ' permintaan, ' + apiCalls.length + ' ke /api/register');
 
+  /*
+   * Angkanya dicari setelah pemisah dibuang. Form menerima nomor apa pun yang
+   * diketik user ('+62 812-3456-7890' di sini), dan yang dibuktikan adalah
+   * nomornya IKUT ke ringkasan - bukan bahwa user mengetiknya tanpa spasi.
+   * Polanya menerima bentuk internasional (62...) maupun lokal (0...).
+   */
+  const waLine = (validSubmit.summary ?? '').split('\n').find((l) => /wa|WhatsApp/i.test(l)) ?? '';
+  const waDigits = waLine.replace(/\D+/g, '');
   check('Nomor WhatsApp terbaca di ringkasan yang disalin user',
-    /62\d{8,13}|0\d{9,12}/.test(validSubmit.summary ?? ''),
-    (validSubmit.summary ?? '').split('\n').find((l) => /wa|WhatsApp/i.test(l)) ?? '');
+    /62\d{8,13}|0\d{9,12}/.test(waDigits), waDigits || 'baris WhatsApp tidak ditemukan');
 
   /*
    * Bukti dari sisi database, bukan dari sisi tampilan. Ini yang membedakan

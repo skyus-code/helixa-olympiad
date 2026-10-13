@@ -15,6 +15,8 @@
     "check:verify": "node scripts/verify.mjs",
     "check:webgl-off": "node scripts/verify-webgl-off.mjs",
     "check:lighthouse": "node scripts/lighthouse.mjs",
+    "check:api": "node --env-file-if-exists=.env scripts/verify-api.mjs",
+    "check:admin": "node --env-file-if-exists=.env scripts/verify-admin.mjs",
     "check": "npm run build && npm run check:responsive && npm run check:verify && npm run check:webgl-off"
   },
   "dependencies": {
