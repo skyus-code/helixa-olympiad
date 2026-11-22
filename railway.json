@@ -4,7 +4,7 @@
     "buildCommand": "echo \"API saja: tidak ada build frontend\""
   },
   "deploy": {
-    "startCommand": "node server/index.js",
+    "startCommand": "node scripts/db-setup.mjs && node server/index.js",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 60,
     "restartPolicyType": "ON_FAILURE",
