@@ -1356,3 +1356,33 @@ ikut salah. Trade-off metric-versus-kebenaran itu tidak diambil.
     dikirim berstatus **200** untuk `/api/*`. Karena itu `src/lib/api.ts` memeriksa bentuk
     balasan, bukan `res.ok`, dan `verify-api.mjs` menguji kasus yang tidak kelihatan dari layar
     (normalisasi WhatsApp, pendaftar ganda, kunci `settings` asing, token palsu).
+
+### Deploy API ke Railway
+
+`railway.json` sudah menyiapkan build (tanpa build frontend), perintah start, dan health check
+`/api/health`. Langkahnya:
+
+1. Railway → **New Project → Deploy from GitHub repo** → pilih repo ini. Tambahkan juga
+   **Database → MySQL** di project yang sama.
+2. Di service API, tab **Variables**, isi (referensi `MySQL` = nama service database-nya):
+
+   | Variabel | Nilai |
+   |---|---|
+   | `DB_HOST` | `${{MySQL.MYSQLHOST}}` |
+   | `DB_PORT` | `${{MySQL.MYSQLPORT}}` |
+   | `DB_USER` | `${{MySQL.MYSQLUSER}}` |
+   | `DB_PASSWORD` | `${{MySQL.MYSQLPASSWORD}}` |
+   | `DB_NAME` | `${{MySQL.MYSQLDATABASE}}` |
+   | `ADMIN_PASSWORD_HASH` | hasil `npm run admin:hash -- "password"` |
+   | `ADMIN_SECRET` | string acak 64 hex |
+   | `ALLOWED_ORIGINS` | `https://skyus-code.github.io` |
+   | `TRUST_PROXY` | `1` |
+
+   `PORT` diisi Railway sendiri. Jangan isi `ADMIN_PASSWORD` teks biasa.
+3. Tab **Settings → Networking → Generate Domain** untuk mendapat alamat API.
+4. Buat tabel sekali saja, dari laptop, dengan nilai **koneksi publik** MySQL Railway
+   (tab Connect di service MySQL):
+   `DB_HOST=... DB_PORT=... DB_USER=root DB_PASSWORD=... DB_NAME=railway npm run db:setup`
+   (di PowerShell: set `$env:DB_HOST=...` dulu).
+5. GitHub repo → **Settings → Secrets and variables → Actions → Variables** → buat `API_URL`
+   berisi alamat dari langkah 3 (tanpa garis miring akhir), lalu jalankan ulang workflow deploy.
