@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://helixa-olympiad-production.up.railway.app/api/:path*"
+    }
+  ]
+}
