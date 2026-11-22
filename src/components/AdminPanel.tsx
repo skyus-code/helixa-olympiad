@@ -50,7 +50,14 @@ function failureMessage(status: number, message: string): string {
   if (status === 0) {
     return 'API tidak berjalan. Jalankan `npm run api` di terminal, lalu coba lagi.';
   }
-  return message || 'Server menolak permintaan (HTTP ' + status + ').';
+  if (message) return message;
+  // Tanpa pesan JSON dari API, balasannya datang dari server lain (mis. hosting
+  // statis), bukan dari API Helixa.
+  if (status === 404 || status === 405) {
+    return 'Situs ini belum terhubung ke server API admin. Hubungi pengelola untuk mengatur alamat API.';
+  }
+  if (status >= 500) return 'Server sedang bermasalah. Coba lagi sebentar lagi.';
+  return 'Permintaan ditolak. Silakan coba lagi.';
 }
 
 const TAB_LABELS = ['Tanggal & Hadiah', 'Juri & Mitra', 'Pendaftar'] as const;

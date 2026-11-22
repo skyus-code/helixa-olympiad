@@ -17,7 +17,15 @@
  */
 import express from 'express';
 import { pool, ping, DB_NAME } from './db.js';
-import { login, requireAdmin, usingDefaultPassword } from './auth.js';
+import helmet from 'helmet';
+import { rateLimit } from 'express-rate-limit';
+import {
+  login,
+  requireAdmin,
+  loginConfigured,
+  usingPlainPassword,
+  secretIsEphemeral,
+} from './auth.js';
 
 const PORT = Number(process.env.PORT ?? 4000);
 
@@ -115,13 +123,46 @@ function csvCell(value) {
 }
 
 const app = express();
+// Di belakang proxy hosting (Railway/Render/Nginx), IP klien ada di
+// X-Forwarded-For. Isi TRUST_PROXY=1 di sana agar rate limit membaca IP asli.
+if (process.env.TRUST_PROXY) {
+  app.set('trust proxy', Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY);
+}
+app.use(helmet());
 app.use(express.json({ limit: '100kb' }));
-// Tanpa ini, fetch dari origin dev (5173/4200) ditolak browser walau API-nya
-// sehat. Cukup untuk API yang hanya mengembalikan JSON dan dilindungi token.
+
+/**
+ * CORS: hanya origin di ALLOWED_ORIGINS (pisahkan dengan koma), mis.
+ * https://skyus-code.github.io. Tanpa env, hanya origin dev lokal. Origin lain
+ * tidak mendapat header CORS, jadi browser memblokirnya.
+ */
+const ALLOWED_ORIGINS = (
+  process.env.ALLOWED_ORIGINS ??
+  'http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173'
+)
+  .split(',')
+  .map((o) => o.trim().replace(/[/]+$/, ''))
+  .filter(Boolean);
+
+/** 5 percobaan login GAGAL per 15 menit per IP. */
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  skipSuccessfulRequests: true,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  handler: (_req, res) =>
+    res.status(429).json({ error: 'Terlalu banyak percobaan. Coba lagi dalam 15 menit.' }),
+});
+
 app.use((req, res, next) => {
-  res.set('Access-Control-Allow-Origin', req.get('origin') ?? '*');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  const origin = req.get('origin');
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.set('Access-Control-Allow-Origin', origin);
+    res.set('Vary', 'Origin');
+    res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  }
   if (req.method === 'OPTIONS') {
     res.sendStatus(204);
     return;
@@ -207,7 +248,11 @@ app.post('/api/register', async (req, res, next) => {
 /* Admin                                                                       */
 /* -------------------------------------------------------------------------- */
 
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', loginLimiter, (req, res) => {
+  if (!loginConfigured()) {
+    res.status(503).json({ error: 'Login admin belum dikonfigurasi di server.' });
+    return;
+  }
   const token = login(text(req.body?.password));
   if (!token) {
     res.status(401).json({ error: 'Password salah.' });
@@ -397,9 +442,13 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, () => {
   console.log('[api] Helixa Olympiad API siap di http://localhost:' + PORT);
   console.log('[api] database:', DB_NAME);
-  if (usingDefaultPassword()) {
-    console.warn(
-      '[api] PERINGATAN: ADMIN_PASSWORD masih default ("helixa2026"). Ganti lewat .env sebelum dipakai sungguhan.',
-    );
+  if (!loginConfigured()) {
+    console.warn('[api] PERINGATAN: ADMIN_PASSWORD_HASH kosong; login admin dinonaktifkan (`npm run admin:hash`).');
+  } else if (usingPlainPassword()) {
+    console.warn('[api] PERINGATAN: memakai ADMIN_PASSWORD teks biasa. Ganti ke ADMIN_PASSWORD_HASH.');
   }
+  if (secretIsEphemeral) {
+    console.warn('[api] PERINGATAN: ADMIN_SECRET kosong; token hangus tiap server restart.');
+  }
+  console.log('[api] origin diizinkan:', ALLOWED_ORIGINS.join(', '));
 });

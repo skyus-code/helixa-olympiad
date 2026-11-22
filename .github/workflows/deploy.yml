@@ -50,6 +50,8 @@ jobs:
         run: npm run build
         env:
           PUBLIC_BASE: ${{ steps.pages.outputs.base_path || env.FALLBACK_BASE }}
+          # Alamat API produksi: Settings > Secrets and variables > Actions > Variables > API_URL
+          VITE_API_URL: ${{ vars.API_URL }}
 
       - uses: actions/upload-pages-artifact@v4
         with:

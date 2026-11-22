@@ -18,10 +18,45 @@
  */
 import crypto from 'node:crypto';
 
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'helixa2026';
-const ADMIN_SECRET =
-  process.env.ADMIN_SECRET ?? process.env.ADMIN_PASSWORD ?? 'helixa-dev-secret';
+/**
+ * Password admin disimpan sebagai HASH (scrypt) di ADMIN_PASSWORD_HASH, dibuat
+ * dengan `npm run admin:hash`. Tidak ada password di kode dan tidak ada nilai
+ * bawaan: tanpa hash, login ditolak (503).
+ *
+ * ADMIN_PASSWORD (teks biasa) masih diterima HANYA untuk pengembangan lokal dan
+ * skrip uji; server memperingatkan saat memakainya.
+ */
+const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH ?? '';
+const ADMIN_PASSWORD_PLAIN = process.env.ADMIN_PASSWORD ?? '';
 const TOKEN_HOURS = Number(process.env.ADMIN_TOKEN_HOURS ?? 12);
+
+// Tanpa ADMIN_SECRET, dipakai kunci acak per proses: token tidak bisa
+// dipalsukan, hanya hangus saat server restart. Password TIDAK jadi kunci.
+const ADMIN_SECRET = process.env.ADMIN_SECRET || crypto.randomBytes(32).toString('hex');
+export const secretIsEphemeral = !process.env.ADMIN_SECRET;
+
+/** Format hash: `scrypt$<salt hex>$<hash hex>`. */
+export function hashPassword(password) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(String(password), salt, 64);
+  return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`;
+}
+
+function checkHash(password, stored) {
+  const [scheme, saltHex, hashHex] = stored.split('$');
+  if (scheme !== 'scrypt' || !saltHex || !hashHex) return false;
+  const expected = Buffer.from(hashHex, 'hex');
+  const actual = crypto.scryptSync(String(password), Buffer.from(saltHex, 'hex'), expected.length);
+  return crypto.timingSafeEqual(actual, expected);
+}
+
+export function loginConfigured() {
+  return Boolean(ADMIN_PASSWORD_HASH || ADMIN_PASSWORD_PLAIN);
+}
+
+export function usingPlainPassword() {
+  return !ADMIN_PASSWORD_HASH && Boolean(ADMIN_PASSWORD_PLAIN);
+}
 
 /** Bandingkan dua string dengan waktu tetap, supaya panjang/pemetaan tidak bocor. */
 function safeEqual(a, b) {
@@ -41,7 +76,10 @@ function signature(expiry) {
 
 /** Password benar -> token. Salah -> null. */
 export function login(password) {
-  if (!safeEqual(password ?? '', ADMIN_PASSWORD)) return null;
+  const ok = ADMIN_PASSWORD_HASH
+    ? checkHash(password ?? '', ADMIN_PASSWORD_HASH)
+    : ADMIN_PASSWORD_PLAIN !== '' && safeEqual(password ?? '', ADMIN_PASSWORD_PLAIN);
+  if (!ok) return null;
   const expiry = Date.now() + TOKEN_HOURS * 3600 * 1000;
   return `${expiry}.${signature(expiry)}`;
 }
@@ -68,7 +106,3 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
-/** Apakah admin masih memakai password default? Dipakai untuk peringatan di log. */
-export function usingDefaultPassword() {
-  return ADMIN_PASSWORD === 'helixa2026';
-}

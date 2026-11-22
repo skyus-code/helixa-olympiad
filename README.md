@@ -42,7 +42,8 @@ Situsnya berjalan penuh tanpa database. Untuk menyalakan bagian yang menyimpan d
 ## Database, API, dan panel admin
 
 ```bash
-# 0. Salin .env.example -> .env, lalu isi ADMIN_PASSWORD (jangan pakai nilai bawaan)
+# 0. Salin .env.example -> .env, lalu isi ADMIN_PASSWORD_HASH:
+#    npm run admin:hash -- "password-panjang-anda"
 # 1. Siapkan skema + nilai awal (idempoten: boleh dijalankan berkali-kali)
 npm run db:setup
 
@@ -56,9 +57,14 @@ npm run dev
 Panel admin: **`#admin`** — misal <http://localhost:5173/#admin>. Tidak ada tautan ke sana dari
 halaman publik; itu disengaja, dan `verify-admin.mjs` yang menjaganya.
 
-**Ganti `ADMIN_PASSWORD` sebelum dipakai sungguhan.** Nilai bawaannya ada di dalam kode dan
-terbaca siapa pun. Isi juga `ADMIN_SECRET` dengan nilai acak (kalau kosong, password dipakai
-sebagai kuncinya — cukup untuk lokal, rapuh untuk produksi).
+Password admin disimpan sebagai hash scrypt (`ADMIN_PASSWORD_HASH`), tidak ada nilai bawaan. Isi
+`ADMIN_SECRET` dengan nilai acak. Login dibatasi 5 percobaan gagal per 15 menit per IP.
+
+Menjalankan frontend + API sekaligus: `npm run dev:all`.
+
+**Produksi (API terpisah):** set `ALLOWED_ORIGINS` (origin situs, mis. `https://skyus-code.github.io`)
+dan `TRUST_PROXY=1` di host API, dan isi Repository variable `API_URL` di GitHub Actions agar build
+memakai `VITE_API_URL`.
 
 ### Kenapa API terpisah, dan apa akibatnya
 
